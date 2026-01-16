@@ -1,3 +1,4 @@
+# config.py
 import RPi.GPIO as GPIO
 
 # Hardware config
@@ -12,7 +13,7 @@ MOTOR_GROUPS = {
     'a': [13, 16],
     'left_trigger': [12, 16],
     'right_trigger': [8, 13],
-    'back': [6, 20]
+    'dive': [6, 20]
 }
 motor_states = {name: "off" for name in MOTOR_GROUPS}
 
@@ -28,7 +29,7 @@ sensor_data = {
     'imu_temp_f': 0.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0
 }
 
-# GPIO setup
+# GPIO setup (run at import)
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(led_pin, GPIO.OUT)
@@ -36,6 +37,3 @@ GPIO.output(led_pin, GPIO.LOW)
 for p in motor_pins:
     GPIO.setup(p, GPIO.OUT)
     GPIO.output(p, GPIO.LOW)
-
-if __name__ == "__main__":
-    print("Config loaded. Motors:", motor_pins, "LED:", led_pin)
