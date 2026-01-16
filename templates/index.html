@@ -1,52 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ROV Control</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
 <body>
-  <!-- Video Background -->
-  <div id="video-container">
-    <img id="cam" src="/video_feed">
-    <canvas id="overlay"></canvas>
-  </div>
+    <h1>ROV Control</h1>
 
-  <!-- Floating Controls -->
-  <div id="controls">
-    <div class="card hud-card">
-      <h3>Motors</h3>
-      <div class="button-grid">
+    <img src="/video_feed" width="640">
+
+    <div id="controls">
         <button onclick="toggleMotor('forward')">Forward</button>
-        <button onclick="toggleMotor('reverse')">Reverse</button>
-        <button onclick="toggleMotor('left')">Left</button>
-        <button onclick="toggleMotor('right')">Right</button>
-        <button onclick="toggleMotor('up')">Up</button>
-        <button onclick="toggleMotor('down')">Down</button>
-        <button onclick="toggleMotor('yaw_left')">Yaw Left</button>
-        <button onclick="toggleMotor('yaw_right')">Yaw Right</button>
-        <button onclick="toggleMotor('all_stop')">All Stop</button>
-      </div>
+        <button onclick="toggleMotor('vertical')">Vertical</button>
+        <button onclick="toggleMotor('yaw')">Yaw</button>
+
+        <button onclick="fetch('/cal_depth')">Zero Depth</button>
     </div>
 
-    <div class="card hud-card">
-      <h3>Calibration</h3>
-      <div class="button-grid">
-        <button onclick="calibrateDepth()">Zero Depth</button>
-        <button onclick="calibrateHorizon()">Zero Horizon</button>
-        <button onclick="zeroIMU()">Zero IMU</button>
-        <button onclick="toggleLED()">Toggle LED</button>
-      </div>
-    </div>
+    <div id="logs"></div>
 
-    <div class="card hud-card" id="statusCard">
-      <h3>Status</h3>
-      <button id="statusBtn">Pi Status: UNKNOWN</button>
-    </div>
-
-    <div class="card hud-card" id="telemetryCard">
-      <h3>Telemetry</h3>
-      <pre id="telemetry"></pre>
-    </div>
-
-    <div class="card hud-card" id="logsCard">
-      <h3>Logs</h3>
-      <pre id="logs"></pre>
-    </div>
-  </div>
-
-  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script src="/static/js/script.js"></script>
 </body>
+</html>
