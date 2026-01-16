@@ -1,3 +1,4 @@
+# calibration.py
 import json, os, threading
 from logger import log
 
@@ -6,16 +7,14 @@ calib = {'roll_offset': 0, 'pitch_offset': 0, 'yaw_offset': 0, 'depth_zero_ft': 
 cal_lock = threading.Lock()
 
 if os.path.exists(CALIB_FILE):
-    with open(CALIB_FILE, 'r') as f:
-        calib.update(json.load(f))
+    try:
+        with open(CALIB_FILE, 'r') as f:
+            calib.update(json.load(f))
+    except Exception as e:
+        log(f"[CAL] unable to load calibration file: {e}")
 
 def save_calib():
     with cal_lock:
         with open(CALIB_FILE, 'w') as f:
             json.dump(calib, f, indent=2)
     log("[CAL] Saved.")
-
-if __name__ == "__main__":
-    print("Calibration data:", calib)
-    calib['roll_offset'] = 5
-    save_calib()
