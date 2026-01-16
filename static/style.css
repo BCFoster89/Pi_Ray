@@ -1,0 +1,20 @@
+#log-overlay {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: 4;
+  width: 300px;
+  max-height: 150px;
+  overflow-y: auto;
+  background: rgba(20,30,50,0.6);
+  color: #0f0;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 8px;
+  border-radius: 8px;
+}
+#log-overlay h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: #8cf;
+}
