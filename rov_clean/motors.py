@@ -1,4 +1,6 @@
-import time, threading
+# motors.py
+import time
+import threading
 import RPi.GPIO as GPIO
 from logger import log
 from config import motor_pins, MOTOR_GROUPS, MAX_ACTIVE_GROUPS, GROUP_STAGGER_S, MIN_ACTIVATE_INTERVAL_S
@@ -36,10 +38,5 @@ class MotorController:
                 log(f"[MOTOR] {name} OFF")
                 return "off"
 
+# Singleton controller instance
 motor = MotorController()
-
-if __name__ == "__main__":
-    log("Motor debug mode")
-    print("Toggling 'x' group:", motor.toggle('x'))
-    time.sleep(1)
-    print("Toggling 'x' group:", motor.toggle('x'))
