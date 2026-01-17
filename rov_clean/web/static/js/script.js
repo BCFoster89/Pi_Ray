@@ -28,7 +28,7 @@ async function pollMotorStatus(){
 }
 
 // poll every 300ms
-setInterval(pollMotorStatus, 300);
+setInterval(pollMotorStatus, 500);
 
 async function update(){
   let r = await fetch('/status');
@@ -139,23 +139,29 @@ async function calulate(mode){
 async function toggleLED(){await fetch('/toggle_led')}
 async function zeroIMU(){await fetch('/zero_imu')}
 async function heartbeatLoop(){
+  let btn = document.getElementById("statusBtn");
   try {
-    let r = await fetch('/heartbeat');
+    let r = await fetch('/heartbeat', { cache: "no-store" });
     if (r.ok){
-      let btn = document.getElementById("statusBtn");
       btn.textContent = "Pi Status: OK";
-      btn.style.background = "#0a0"; // green
+      btn.classList.remove("lost");
+      btn.classList.add("ok");
+    } else {
+      btn.textContent = "Pi Status: LOST";
+      btn.classList.remove("ok");
+      btn.classList.add("lost");
     }
   } catch (e){
-    let btn = document.getElementById("statusBtn");
     btn.textContent = "Pi Status: LOST";
-    btn.style.background = "#a00"; // red
+    btn.classList.remove("ok");
+    btn.classList.add("lost");
   }
   setTimeout(heartbeatLoop, 2000);
 }
 
-// Start heartbeat loop
+// Start heartbeat loop right away
 heartbeatLoop();
+
 
 
 async function motorCmd(name){

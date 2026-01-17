@@ -48,6 +48,26 @@ html, body {
   padding: 15px;
 }
 
+#statusBtn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: bold;
+  text-align: center;
+  border: none;
+  color: #fff;
+  background: #666; /* default gray (unknown) */
+}
+
+#statusBtn.ok {
+  background: #0a0; /* green */
+}
+
+#statusBtn.lost {
+  background: #a00; /* red */
+}
+
 .card {
   background: rgba(15, 25, 40, 0.95);
   border-radius: 12px;
