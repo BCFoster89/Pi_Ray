@@ -22,6 +22,11 @@ def init_app(app):
     def status():
         return jsonify({'sensor': sensor_data})
 
+    @app.route("/heartbeat")
+    def heartbeat():
+        return "OK"
+
+
     @app.route("/logs")
     def logs():
         return "<br>".join(log_buffer)
