@@ -138,6 +138,26 @@ async function calulate(mode){
 
 async function toggleLED(){await fetch('/toggle_led')}
 async function zeroIMU(){await fetch('/zero_imu')}
+async function heartbeatLoop(){
+  try {
+    let r = await fetch('/heartbeat');
+    if (r.ok){
+      let btn = document.getElementById("statusBtn");
+      btn.textContent = "Pi Status: OK";
+      btn.style.background = "#0a0"; // green
+    }
+  } catch (e){
+    let btn = document.getElementById("statusBtn");
+    btn.textContent = "Pi Status: LOST";
+    btn.style.background = "#a00"; // red
+  }
+  setTimeout(heartbeatLoop, 2000);
+}
+
+// Start heartbeat loop
+heartbeatLoop();
+
+
 async function motorCmd(name){
   let r = await fetch('/motor/'+name);
   let res = await r.json();
