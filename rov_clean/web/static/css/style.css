@@ -1,36 +1,51 @@
-body {
+html, body {
   margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;  /* no scroll */
   display: flex;
+  flex-direction: row;
+  font-family: "Roboto", "Segoe UI", sans-serif;
   color: #e0f7fa;
   background: #0b1e2d;
-  font-family: "Roboto", "Segoe UI", sans-serif;
-}
- 
-#vid {
-  flex: 3;
-  text-align: center;
-  background: #000;
-  position: relative;
 }
 
-#cam { width: 100%; display: block; }
+#vid {
+  flex: 3;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+#cam {
+  height: 100vh;       /* fill vertical space */
+  width: auto;         /* auto scale width */
+  object-fit: cover;   /* crop sides if wider than container */
+  display: block;
+}
 
 #overlay {
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 
 #side {
   flex: 1;
-  padding: 15px;
+  height: 100vh;
   overflow-y: auto;
   background: rgba(20,30,50,0.9);
   border-left: 1px solid #123;
   display: flex;
   flex-direction: column;
   gap: 15px;
+  padding: 15px;
 }
 
 .card {
