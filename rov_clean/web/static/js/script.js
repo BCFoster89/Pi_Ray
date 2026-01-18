@@ -30,107 +30,79 @@ async function pollMotorStatus(){
 // poll every 300ms
 setInterval(pollMotorStatus, 500);
 
-async function update(){
-  let r = await fetch('/status');
-  let d = await r.json();
-  d = d.sensor;
+// Fetch and draw telemetry overlay
+async function updateOverlay() {
+  try {
+    let r = await fetch('/status', { cache: "no-store" });
+    let data = await r.json();
+    let sensor = data.sensor;
 
-  document.getElementById("tele").textContent = `
-Pressure: ${d.pressure_inhg} inHg
-Air Temp: ${d.temperature_f} °F
-Depth: ${d.depth_ft} ft
-Accel: X=${d.accel_x}g Y=${d.accel_y}g Z=${d.accel_z}g
-Gyro: X=${d.gyro_x}°/s Y=${d.gyro_y}°/s Z=${d.gyro_z}°/s
-IMU Temp: ${d.imu_temp_f} °F
-Roll: ${d.roll}°
-Pitch: ${d.pitch}°
-Yaw: ${d.yaw}°`;
-
-  drawHUD(d.roll, d.pitch, d.yaw, d.depth_ft);
-  setTimeout(update,500);
+    drawHUD(sensor);
+  } catch (e) {
+    console.warn("Telemetry fetch failed", e);
+  }
+  setTimeout(updateOverlay, 200); // ~5 Hz
 }
 
-function drawHUD(r, p, yaw, depth){
-  let c = document.getElementById("overlay");
-  let ctx = c.getContext("2d");
-  ctx.clearRect(0,0,c.width,c.height);
+function drawHUD(sensor){
+  let canvas = document.getElementById("overlay");
+  let ctx = canvas.getContext("2d");
+  canvas.width = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
 
-  // === Pitch Ladder (shifted left side) ===
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle = "#0ff";
+  ctx.fillStyle = "#0ff";
+  ctx.lineWidth = 2;
+  ctx.font = "16px Segoe UI";
+
+  let cx = canvas.width/2;
+  let cy = canvas.height/2;
+
+  // === Artificial Horizon ===
   ctx.save();
-  ctx.translate(c.width/4, c.height/2);  // move ladder left
-  ctx.rotate(-r*Math.PI/180);
-  ctx.translate(0, p*3);
-
-  ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.font="14px sans-serif"; ctx.fillStyle="#fff";
-  for(let i=-90;i<=90;i+=10){
-    let y = i*3;
-    ctx.beginPath();
-    ctx.moveTo(-30,y); ctx.lineTo(30,y); ctx.stroke();
-    if (i % 20 === 0) ctx.fillText(i+"°",-50,y+4);
-  }
+  ctx.translate(cx, cy);
+  ctx.rotate((-sensor.roll || 0) * Math.PI/180);  // roll
+  let pitchOffset = (sensor.pitch || 0) * 3;      // pitch scaling
+  ctx.beginPath();
+  ctx.moveTo(-200, pitchOffset);
+  ctx.lineTo(200, pitchOffset);
+  ctx.stroke();
   ctx.restore();
 
-  // === Fixed aircraft symbol (center) ===
-  ctx.strokeStyle="#0ff"; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.moveTo(c.width/2-30,c.height/2); ctx.lineTo(c.width/2+30,c.height/2); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(c.width/2,c.height/2); ctx.lineTo(c.width/2,c.height/2-20); ctx.stroke();
+  // === Depth (bottom-right) ===
+  ctx.fillStyle = "#0f0";
+  ctx.textAlign = "right";
+  ctx.fillText(`Depth: ${(sensor.depth_ft || 0).toFixed(1)} ft`, canvas.width - 20, canvas.height - 20);
 
-  // === Roll arc (bigger radius) ===
-  ctx.strokeStyle="#fff"; ctx.lineWidth=1;
-  let arcRadius = 120;  // increased
+  // === Heading Compass (top-center) ===
+  let heading = sensor.yaw || 0;
+  ctx.fillStyle = "#0ff";
+  ctx.textAlign = "center";
+  ctx.fillText(`Heading: ${Math.round(heading)}°`, cx, 30);
+
+  // Draw compass tape
   ctx.beginPath();
-  ctx.arc(c.width/2, c.height/2-arcRadius, arcRadius, Math.PI, 2*Math.PI);
+  for(let i=-90;i<=90;i+=15){
+    let mark = heading + i;
+    if (mark < 0) mark += 360;
+    if (mark >= 360) mark -= 360;
+    let x = cx + i*3;  // scale for spacing
+    ctx.moveTo(x,50);
+    ctx.lineTo(x,60);
+    ctx.fillText(mark, x, 75);
+  }
   ctx.stroke();
 
-  // Roll marker
-  ctx.save();
-  ctx.translate(c.width/2, c.height/2-arcRadius);
-  ctx.rotate(-r*Math.PI/180);
-  ctx.beginPath(); ctx.moveTo(0,-arcRadius); ctx.lineTo(-6,-arcRadius+12); ctx.lineTo(6,-arcRadius+12); ctx.closePath();
-  ctx.fillStyle="#fff"; ctx.fill();
-  ctx.restore();
-
-  // === Depth gauge (left side) ===
-  let barHeight = c.height * 0.6;
-  let barTop = c.height*0.2;
-  let h = Math.min(barHeight, (depth/25)*barHeight);
-  let grad=ctx.createLinearGradient(0,barTop,0,barTop+barHeight);
-  grad.addColorStop(0,"#0ff");
-  grad.addColorStop(1,"#004");
-  ctx.fillStyle=grad;
-  ctx.fillRect(20, barTop+barHeight-h, 30, h);
-
-  ctx.strokeStyle="#fff"; ctx.strokeRect(20, barTop, 30, barHeight);
-  ctx.fillStyle="#fff"; ctx.font="20px Roboto";
-  ctx.fillText(depth+" ft", 60, barTop+20);
-
-  // === Yaw compass tape (top center) ===
-  let heading = yaw;
-  ctx.save();
-  ctx.translate(c.width/2, 50);
-  ctx.strokeStyle="#fff"; ctx.fillStyle="#fff"; ctx.font="14px sans-serif";
-
-  for (let i=-90; i<=90; i+=10){
-    let hdg = heading + i;
-    if (hdg > 180) hdg -= 360;
-    if (hdg < -180) hdg += 360;
-    let x = i*3;
-    ctx.beginPath(); ctx.moveTo(x, -8); ctx.lineTo(x, 8); ctx.stroke();
-    if (i % 30 === 0){
-      ctx.fillText(hdg.toFixed(0), x-15, -15);
-    }
-  }
-
-  ctx.restore();
-
-  // Current heading readout
-  ctx.fillStyle="#00d4ff"; ctx.font="20px Roboto";
-  ctx.fillText("HDG: "+heading.toFixed(0)+"°", c.width/2-50, 25);
-
-  // Roll/Pitch readouts (keep small)
-  ctx.fillText("Roll: "+r.toFixed(1)+"°", 20, c.height-50);
-  ctx.fillText("Pitch: "+p.toFixed(1)+"°", 20, c.height-20);
+  // === Pitch & Roll (bottom-left) ===
+  ctx.fillStyle = "#ff0";
+  ctx.textAlign = "left";
+  ctx.fillText(`Pitch: ${(sensor.pitch||0).toFixed(1)}°`, 20, canvas.height - 40);
+  ctx.fillText(`Roll: ${(sensor.roll||0).toFixed(1)}°`, 20, canvas.height - 20);
 }
+
+updateOverlay(); // start loop
+
 
 async function calulate(mode){
   await fetch(mode=='horizon'?'/cal_horizon':'/cal_depth');
