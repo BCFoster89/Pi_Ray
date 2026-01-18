@@ -12,30 +12,46 @@
     <canvas id="overlay"></canvas>
   </div>
 
-  <!-- Floating Controls -->
-  <div id="controls">
-    <div class="card hud-card">
-      <h3>Motors</h3>
-      <div class="button-grid">
-        <button onclick="toggleMotor('forward')">Forward</button>
-        <button onclick="toggleMotor('reverse')">Reverse</button>
-        <button onclick="toggleMotor('vertical')">Vertical</button>
-      </div>
+    <div class="card">
+      <h3>Logs</h3>
+      <pre id="logs"></pre>
     </div>
+  
+  <!-- Floating Controls -->
+ <div id="controls">
+  <div class="card hud-card">
+    <h3>Motors</h3>
+    <div class="button-grid">
+      <button onclick="toggleMotor('forward')">Forward</button>
+      <button onclick="toggleMotor('reverse')">Reverse</button>
+      <button onclick="toggleMotor('left')">Left</button>
+      <button onclick="toggleMotor('right')">Right</button>
+      <button onclick="toggleMotor('up')">Up</button>
+      <button onclick="toggleMotor('down')">Down</button>
+      <button onclick="toggleMotor('yaw_left')">Yaw Left</button>
+      <button onclick="toggleMotor('yaw_right')">Yaw Right</button>
+      <button onclick="toggleMotor('all_stop')">All Stop</button>
+    </div>
+  </div>
 
-    <div class="card hud-card">
-      <h3>Calibration</h3>
+  <div class="card hud-card">
+    <h3>Calibration</h3>
+    <div class="button-grid">
       <button onclick="calibrateDepth()">Zero Depth</button>
       <button onclick="calibrateHorizon()">Zero Horizon</button>
       <button onclick="zeroIMU()">Zero IMU</button>
-    </div>
-
-    <div class="card hud-card" id="statusCard">
-      <h3>Status</h3>
-      <button id="statusBtn">Pi Status: UNKNOWN</button>
+      <button onclick="toggleLED()">Toggle LED</button>
     </div>
   </div>
+
+  <div class="card hud-card" id="statusCard">
+    <h3>Status</h3>
+    <button id="statusBtn">Pi Status: UNKNOWN</button>
+  </div>
+</div>
+
 
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
+
