@@ -29,113 +29,12 @@ async function pollMotorStatus(){
 
 // poll every 300ms
 setInterval(pollMotorStatus, 500);
-
-// Fetch and draw telemetry overlay
-async function updateOverlay() {
-  try {
-    let r = await fetch('/status', { cache: "no-store" });
-    let data = await r.json();
-    let sensor = data.sensor;
-
-    drawHUD(sensor);
-  } catch (e) {
-    console.warn("Telemetry fetch failed", e);
-  }
-  setTimeout(updateOverlay, 200); // ~5 Hz
-}
-
-function drawHUD(sensor){
-  let canvas = document.getElementById("overlay");
-  let ctx = canvas.getContext("2d");
-  canvas.width = canvas.clientWidth;
-  canvas.height = canvas.clientHeight;
-
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.strokeStyle = "#0ff";
-  ctx.fillStyle = "#0ff";
-  ctx.lineWidth = 2;
-  ctx.font = "16px Segoe UI";
-
-  let cx = canvas.width/2;
-  let cy = canvas.height/2;
-
-  // === Artificial Horizon ===
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate((-sensor.roll || 0) * Math.PI/180);  // roll
-  let pitchOffset = (sensor.pitch || 0) * 3;      // pitch scaling
-  ctx.beginPath();
-  ctx.moveTo(-200, pitchOffset);
-  ctx.lineTo(200, pitchOffset);
-  ctx.stroke();
-  ctx.restore();
-
-  // === Depth (bottom-right) ===
-  ctx.fillStyle = "#0f0";
-  ctx.textAlign = "right";
-  ctx.fillText(`Depth: ${(sensor.depth_ft || 0).toFixed(1)} ft`, canvas.width - 20, canvas.height - 20);
-
-  // === Heading Compass (top-center) ===
-  let heading = sensor.yaw || 0;
-  ctx.fillStyle = "#0ff";
-  ctx.textAlign = "center";
-  ctx.fillText(`Heading: ${Math.round(heading)}°`, cx, 30);
-
-  // Draw compass tape
-  ctx.beginPath();
-  for(let i=-90;i<=90;i+=15){
-    let mark = heading + i;
-    if (mark < 0) mark += 360;
-    if (mark >= 360) mark -= 360;
-    let x = cx + i*3;  // scale for spacing
-    ctx.moveTo(x,50);
-    ctx.lineTo(x,60);
-    ctx.fillText(mark, x, 75);
-  }
-  ctx.stroke();
-
-  // === Pitch & Roll (bottom-left) ===
-  ctx.fillStyle = "#ff0";
-  ctx.textAlign = "left";
-  ctx.fillText(`Pitch: ${(sensor.pitch||0).toFixed(1)}°`, 20, canvas.height - 40);
-  ctx.fillText(`Roll: ${(sensor.roll||0).toFixed(1)}°`, 20, canvas.height - 20);
-}
-
-updateOverlay(); // start loop
-
-
-async function calulate(mode){
-  await fetch(mode=='horizon'?'/cal_horizon':'/cal_depth');
-}
-
-async function toggleLED(){await fetch('/toggle_led')}
-async function zeroIMU(){await fetch('/zero_imu')}
-// Heartbeat loop for Pi status
-async function heartbeatLoop(){
-  let btn = document.getElementById("statusBtn");
-  try {
-    let r = await fetch('/heartbeat', { cache: "no-store" });
-    if (r.ok){
-      btn.textContent = "Pi Status: OK";
-      btn.classList.remove("lost");
-      btn.classList.add("ok");
-    } else {
-      btn.textContent = "Pi Status: LOST";
-      btn.classList.remove("ok");
-      btn.classList.add("lost");
-    }
-  } catch (e){
-    btn.textContent = "Pi Status: LOST";
-    btn.classList.remove("ok");
-    btn.classList.add("lost");
-  }
-  setTimeout(heartbeatLoop, 2000);
-}
-heartbeatLoop();
-
-// Example button actions
+// === BUTTON FUNCTIONS ===
 function toggleMotor(name){
-  fetch(`/motor/${name}`).then(r => r.json()).then(console.log);
+  fetch(`/motor/${name}`)
+    .then(r => r.json())
+    .then(d => console.log("Motor:", d))
+    .catch(console.error);
 }
 
 function calibrateDepth(){
@@ -150,41 +49,124 @@ function zeroIMU(){
   fetch('/zero_imu').then(r => r.text()).then(alert);
 }
 
+function toggleLED(){
+  fetch('/toggle_led').then(r => r.text()).then(alert);
+}
 
-
-
-async function motorCmd(name){
-  let r = await fetch('/motor/'+name);
-  let res = await r.json();
-
-  let btnMap = {
-    "y": "btn-y",
-    "x": "btn-x",
-    "b": "btn-b",
-    "a": "btn-a",
-    "right_trigger": "btn-rt",
-    "left_trigger": "btn-lt",
-    "dive": "btn-dive"
-  };
-
-  let btnId = btnMap[res.group];
-  if (btnId){
-    let btn = document.getElementById(btnId);
-    if (res.state === "on"){
-      btn.classList.add("active");
-    } else {
-      btn.classList.remove("active");
-    }
+// === STATUS HEARTBEAT ===
+async function heartbeatLoop(){
+  let btn = document.getElementById("statusBtn");
+  try {
+    let r = await fetch('/heartbeat', { cache: "no-store" });
+    if (r.ok){
+      btn.textContent = "Pi Status: OK";
+      btn.classList.remove("lost");
+      btn.classList.add("ok");
+    } else throw new Error("bad response");
+  } catch {
+    btn.textContent = "Pi Status: LOST";
+    btn.classList.remove("ok");
+    btn.classList.add("lost");
   }
+  setTimeout(heartbeatLoop, 2000);
 }
+heartbeatLoop();
 
-async function logLoop(){
-  let r = await fetch('/logs');
-  let logsElem = document.getElementById("logs");
-  logsElem.innerHTML = await r.text();
-  logsElem.scrollTop = logsElem.scrollHeight;
-  setTimeout(logLoop,2000);
+// === TELEMETRY + OVERLAY ===
+async function updateOverlay() {
+  try {
+    let r = await fetch('/status', { cache: "no-store" });
+    let data = await r.json();
+    let sensor = data.sensor;
+
+    // draw HUD
+    drawHUD(sensor);
+
+    // update telemetry card
+    document.getElementById("telemetry").textContent =
+      JSON.stringify(sensor, null, 2);
+
+  } catch (e) {
+    console.warn("Telemetry fetch failed", e);
+  }
+  setTimeout(updateOverlay, 200);
 }
+updateOverlay();
 
-update();
-logLoop();
+// === LOGS ===
+async function updateLogs(){
+  try {
+    let r = await fetch('/logs', { cache: "no-store" });
+    let text = await r.text();
+    document.getElementById("logs").textContent =
+      text.split("<br>").slice(-20).join("\n");
+  } catch (e){
+    console.warn("Log fetch failed", e);
+  }
+  setTimeout(updateLogs, 1000);
+}
+updateLogs();
+
+// === HUD DRAWING ===
+function drawHUD(sensor){
+  let canvas = document.getElementById("overlay");
+  let ctx = canvas.getContext("2d");
+  canvas.width = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  let cx = canvas.width/2;
+  let cy = canvas.height/2;
+
+  // Horizon with roll & pitch
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate((-sensor.roll || 0) * Math.PI/180);
+  let pitchOffset = (sensor.pitch || 0) * 5; // scale
+  ctx.strokeStyle = "#0ff";
+  ctx.beginPath();
+  ctx.moveTo(-300, pitchOffset);
+  ctx.lineTo(300, pitchOffset);
+  ctx.stroke();
+
+  // Pitch ladder
+  ctx.font = "14px Segoe UI";
+  ctx.fillStyle = "#0ff";
+  for(let p=-30;p<=30;p+=10){
+    let offset = (p - (sensor.pitch||0)) * 5;
+    ctx.beginPath();
+    ctx.moveTo(-40, offset);
+    ctx.lineTo(40, offset);
+    ctx.stroke();
+    ctx.fillText(p+"°", 50, offset+5);
+  }
+  ctx.restore();
+
+  // Depth bottom-right
+  ctx.fillStyle = "#0f0";
+  ctx.textAlign = "right";
+  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, canvas.width-20, canvas.height-20);
+
+  // Heading tape top-center
+  let heading = sensor.yaw || 0;
+  ctx.fillStyle = "#0ff";
+  ctx.textAlign = "center";
+  ctx.fillText(`Heading: ${Math.round(heading)}°`, cx, 30);
+  ctx.beginPath();
+  for(let i=-90;i<=90;i+=10){
+    let mark = Math.round(heading + i); // Round the mark to remove decimals
+    if (mark<0) mark+=360;
+    if (mark>=360) mark-=360;
+    let x = cx + i*3;
+    ctx.moveTo(x,50);
+    ctx.lineTo(x,60);
+    ctx.stroke();
+    ctx.fillText(mark, x, 75);
+  }
+
+  // Roll & Pitch bottom-left
+  ctx.fillStyle = "#ff0";
+  ctx.textAlign = "left";
+  ctx.fillText(`Pitch: ${(sensor.pitch||0).toFixed(1)}°`, 20, canvas.height-40);
+  ctx.fillText(`Roll: ${(sensor.roll||0).toFixed(1)}°`, 20, canvas.height-20);
+}
