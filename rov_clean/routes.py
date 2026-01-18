@@ -22,6 +22,8 @@ def init_app(app):
     def status():
         return jsonify({'sensor': sensor_data})
 
+    
+
     @app.route("/heartbeat")
     def heartbeat():
         return "OK"
@@ -130,3 +132,4 @@ def init_app(app):
     def video_feed():
         return Response(generate_frames(),
                         mimetype='multipart/x-mixed-replace; boundary=frame')
+
