@@ -138,6 +138,7 @@ async function calulate(mode){
 
 async function toggleLED(){await fetch('/toggle_led')}
 async function zeroIMU(){await fetch('/zero_imu')}
+// Heartbeat loop for Pi status
 async function heartbeatLoop(){
   let btn = document.getElementById("statusBtn");
   try {
@@ -158,9 +159,25 @@ async function heartbeatLoop(){
   }
   setTimeout(heartbeatLoop, 2000);
 }
-
-// Start heartbeat loop right away
 heartbeatLoop();
+
+// Example button actions
+function toggleMotor(name){
+  fetch(`/motor/${name}`).then(r => r.json()).then(console.log);
+}
+
+function calibrateDepth(){
+  fetch('/cal_depth').then(r => r.text()).then(alert);
+}
+
+function calibrateHorizon(){
+  fetch('/cal_horizon').then(r => r.text()).then(alert);
+}
+
+function zeroIMU(){
+  fetch('/zero_imu').then(r => r.text()).then(alert);
+}
+
 
 
 
