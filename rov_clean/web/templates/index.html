@@ -1,53 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>ROV Control</title>
+  <meta charset="UTF-8">
+  <title>ROV Cockpit</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-  <div id="vid">
+  <!-- Video Background -->
+  <div id="video-container">
     <img id="cam" src="/video_feed">
-    <canvas id="overlay" width="1280" height="720"></canvas>
+    <canvas id="overlay"></canvas>
   </div>
 
-  <div id="side">
-    <div class="card">
-      <h3>Telemetry</h3>
-      <pre id="tele"></pre>
-    </div>
-    
-  <div class="card">
-    <h3>Status</h3>
-    <button id="statusBtn">Pi Status: UNKNOWN</button>
-    </div>
-
-    <div class="card">
-      <h3>Logs</h3>
-      <pre id="logs"></pre>
+  <!-- Floating Controls -->
+  <div id="controls">
+    <div class="card hud-card">
+      <h3>Motors</h3>
+      <div class="button-grid">
+        <button onclick="toggleMotor('forward')">Forward</button>
+        <button onclick="toggleMotor('reverse')">Reverse</button>
+        <button onclick="toggleMotor('vertical')">Vertical</button>
+      </div>
     </div>
 
-    <div class="card">
-      <h3>Controls</h3>
-      <button onclick="calulate('horizon')">Zero Horizon</button>
-      <button onclick="calulate('depth')">Set Surface</button>
-      <button onclick="toggleLED()">Toggle LED</button>
+    <div class="card hud-card">
+      <h3>Calibration</h3>
+      <button onclick="calibrateDepth()">Zero Depth</button>
+      <button onclick="calibrateHorizon()">Zero Horizon</button>
       <button onclick="zeroIMU()">Zero IMU</button>
     </div>
 
-    <div class="card">
-      <h3>Motors</h3>
-      <button id="btn-y" onclick="motorCmd('y')">FWD (Y)</button>
-      <button id="btn-x" onclick="motorCmd('x')">Left (X)</button>
-      <button id="btn-b" onclick="motorCmd('b')">Right (B)</button>
-      <button id="btn-a" onclick="motorCmd('a')">Aft (A)</button>
-      <button id="btn-rt" onclick="motorCmd('right_trigger')">CW (RT)</button>
-      <button id="btn-lt" onclick="motorCmd('left_trigger')">CCW (LT)</button>
-      <button id="btn-dive" onclick="motorCmd('dive')">Dive (Start)</button>
+    <div class="card hud-card" id="statusCard">
+      <h3>Status</h3>
+      <button id="statusBtn">Pi Status: UNKNOWN</button>
     </div>
   </div>
 
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
-
