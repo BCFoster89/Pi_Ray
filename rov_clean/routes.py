@@ -31,6 +31,21 @@ def init_app(app):
     def logs():
         return "<br>".join(log_buffer)
 
+# inside init_app(app) alongside other routes
+    @app.route("/motor/all_stop")
+    def motor_all_stop():
+        # turn off any groups currently reported as "on"
+        stopped = []
+        for name, state in list(motor_states.items()):
+            if state == "on":
+                try:
+                    motor.toggle(name)   # toggle() will turn it off if currently on
+                    motor_states[name] = "off"
+                    stopped.append(name)
+                except Exception as e:
+                    log(f"[MOTOR] failed stopping {name}: {e}")
+        return jsonify({"stopped": stopped})
+    
     @app.route("/toggle_led")
     def toggle_led():
         # update global led state in config
