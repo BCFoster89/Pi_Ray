@@ -6,7 +6,6 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-<body>
   <!-- Video Background -->
   <div id="video-container">
     <img id="cam" src="/video_feed">
@@ -18,15 +17,15 @@
     <div class="card hud-card">
       <h3>Motors</h3>
       <div class="button-grid">
-        <button onclick="toggleMotor('forward')">Forward</button>
-        <button onclick="toggleMotor('reverse')">Reverse</button>
-        <button onclick="toggleMotor('left')">Left</button>
-        <button onclick="toggleMotor('right')">Right</button>
-        <button onclick="toggleMotor('up')">Up</button>
-        <button onclick="toggleMotor('down')">Down</button>
-        <button onclick="toggleMotor('yaw_left')">Yaw Left</button>
-        <button onclick="toggleMotor('yaw_right')">Yaw Right</button>
-        <button onclick="toggleMotor('all_stop')">All Stop</button>
+        <!-- Use existing MOTOR_GROUP names and add the IDs pollMotorStatus expects -->
+        <button id="btn-y" onclick="toggleMotor('y')">Forward (Y)</button>
+        <button id="btn-x" onclick="toggleMotor('x')">Reverse (X)</button>
+        <button id="btn-b" onclick="toggleMotor('b')">Left (B)</button>
+        <button id="btn-a" onclick="toggleMotor('a')">Right (A)</button>
+        <button id="btn-rt" onclick="toggleMotor('right_trigger')">Right Trigger</button>
+        <button id="btn-lt" onclick="toggleMotor('left_trigger')">Left Trigger</button>
+        <button id="btn-dive" onclick="toggleMotor('dive')">Dive</button>
+        <button onclick="fetch('/motor/all_stop').then(r => r.json()).then(console.log)">All Stop</button>
       </div>
     </div>
 
@@ -58,5 +57,4 @@
 
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
-
-
+</html>
