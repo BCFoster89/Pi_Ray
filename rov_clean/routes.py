@@ -93,12 +93,12 @@ def init_app(app):
                 s.gyro_offsets['z'] = sensor_data['gyro_z']
 
                 s.imu_offsets_enabled = True
-                #msg = "IMU calibration offsets applied (gravity aligned to X)"
+                msg = "IMU calibration offsets applied (gravity aligned to X)"
             else:
                 s.accel_offsets = {'x': 0.0, 'y': 0.0, 'z': 0.0}
                 s.gyro_offsets  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
                 s.imu_offsets_enabled = False
-                #msg = "IMU calibration offsets cleared"
+                msg = "IMU calibration offsets cleared"
 
             # Reset orientation integration
             s.roll_i = s.pitch_i = s.yaw_i = 0.0
