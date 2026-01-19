@@ -83,8 +83,17 @@ async function updateOverlay() {
     drawHUD(sensor);
 
     // update telemetry card
-    document.getElementById("telemetry").textContent =
-      JSON.stringify(sensor, null, 2);
+    const telemetryEl = document.getElementById("telemetry");
+    telemetryEl.textContent = Object.entries(sensor)
+      .map(([k, v]) =>
+        // turn "depth_ft" -> "Depth Ft" and format "key: value"
+        `${k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}: ${v}`
+      )
+      .join('\n');
+
+    //below repalced with above
+    //document.getElementById("telemetry").textContent =
+      //JSON.stringify(sensor, null, 2);
 
   } catch (e) {
     console.warn("Telemetry fetch failed", e);
