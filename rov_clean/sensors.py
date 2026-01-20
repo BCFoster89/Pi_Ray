@@ -73,7 +73,22 @@ def sensor_loop():
                 ax -= accel_offsets['x']; ay -= accel_offsets['y']; az -= accel_offsets['z']
                 gx -= gyro_offsets['x']; gy -= gyro_offsets['y']; gz -= gyro_offsets['z']
 
-            itf = (imu.read_temp_c() * 9 / 5) + 32
+            #itf = (imu.read_temp_c() * 9 / 5) + 32
+            #new additions:
+            # read temperature from IMU (library name says _c but some firmware/libs return Kelvin/raw)
+            temp_raw = imu.read_temp_c()
+            if temp_raw is None:
+                temp_c = 0.0
+            else:
+                # if the reading looks like Kelvin (very large >200), convert to Celsius
+                temp_c = temp_raw - 273.15 if temp_raw > 200 else temp_raw
+
+            # convert to Fahrenheit for display
+            itf = (temp_c * 9 / 5) + 32
+
+            # optional debug log if values look odd
+            if temp_raw > 200 or temp_raw < -50:
+                log(f"[SENSOR] unusual raw IMU temp reading: {temp_raw} -> {temp_c} C / {itf} F")
 
             # Integration
             roll_i += gx * dt
