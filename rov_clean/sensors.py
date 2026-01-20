@@ -1,7 +1,5 @@
 # sensors.py
-import time
-import math
-import threading
+import time, math, threading
 from collections import deque
 
 import adafruit_lps28
@@ -13,16 +11,6 @@ from config import sensor_data, sensor_lock
 from calibration import calib, cal_lock
 
 # -----------------------------
-# Constants / tuning parameters
-# -----------------------------
-ALPHA_C = 0.98        # complementary filter coefficient
-EMA_ALPHA = 0.1       # output smoothing
-LOOP_DELAY = 0.05     # seconds (20 Hz)
-
-INHG_TO_HPA = 1 / 0.02953
-HPA_TO_FT_WATER = 0.033488
-
-# -----------------------------
 # Shared / internal state
 # -----------------------------
 pressure_buf = deque(maxlen=5)
@@ -31,6 +19,9 @@ roll_f = pitch_f = yaw_f = 0.0
 roll_i = pitch_i = yaw_i = 0.0
 
 last_time = None  # initialized when thread starts
+
+alpha_c = 0.98
+ema_alpha = 0.1
 
 accel_offsets = {'x': 0.0, 'y': 0.0, 'z': 0.0}
 gyro_offsets  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
@@ -99,7 +90,7 @@ def sensor_loop():
 
             depth_ft_raw = max(
                 0.0,
-                ((med * INHG_TO_HPA) - 1013.25) * HPA_TO_FT_WATER
+                ((med / 0.02953) - 1013.25) * 0.033488
             )
 
             with cal_lock:
@@ -141,21 +132,21 @@ def sensor_loop():
             pitch_i += gy * dt
             yaw_i   += gz * dt
 
-            # Wrap yaw to prevent unbounded growth
+            # Prevent unbounded yaw growth
             yaw_i = (yaw_i + 180.0) % 360.0 - 180.0
 
-            # Accelerometer tilt (assumes gravity dominance)
+            # Accelerometer tilt
             ar = math.degrees(math.atan2(ay, az))
             ap = math.degrees(math.atan2(-ax, math.sqrt(ay * ay + az * az)))
 
             # Complementary filter
-            roll_i  = ALPHA_C * roll_i  + (1.0 - ALPHA_C) * ar
-            pitch_i = ALPHA_C * pitch_i + (1.0 - ALPHA_C) * ap
+            roll_i  = alpha_c * roll_i  + (1.0 - alpha_c) * ar
+            pitch_i = alpha_c * pitch_i + (1.0 - alpha_c) * ap
 
             # Output smoothing
-            roll_f  = EMA_ALPHA * roll_i  + (1.0 - EMA_ALPHA) * roll_f
-            pitch_f = EMA_ALPHA * pitch_i + (1.0 - EMA_ALPHA) * pitch_f
-            yaw_f   = EMA_ALPHA * yaw_i   + (1.0 - EMA_ALPHA) * yaw_f
+            roll_f  = ema_alpha * roll_i  + (1.0 - ema_alpha) * roll_f
+            pitch_f = ema_alpha * pitch_i + (1.0 - ema_alpha) * pitch_f
+            yaw_f   = ema_alpha * yaw_i   + (1.0 - ema_alpha) * yaw_f
 
             with cal_lock:
                 ro = calib['roll_offset']
@@ -191,8 +182,8 @@ def sensor_loop():
         except Exception as e:
             log(f"[SENSOR] error: {e}")
 
-        time.sleep(LOOP_DELAY)
+        time.sleep(0.05)
 
 
-# Start sensor thread on import
+# Start thread at import (unchanged behavior)
 threading.Thread(target=sensor_loop, daemon=True).start()
