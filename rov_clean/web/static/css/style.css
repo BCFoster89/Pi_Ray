@@ -35,15 +35,24 @@ html, body {
   pointer-events: none;
 }
 
+/* Compact right-hand overlay */
 #controls {
   position: absolute;
   top: 10px;
   right: 10px;
   z-index: 3;
+
+  /* narrow column */
+  width: 220px;       /* main width for desktop */
+  max-width: 30vw;    /* responsive cap */
+
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;           /* smaller gaps between cards */
+
+  align-items: flex-end; /* keep cards flush to the right edge */
 }
+
 
 #telemetry, #logs {
   font-family: "Courier New", Courier, monospace;
@@ -52,11 +61,15 @@ html, body {
   color: #e0f7fa;
 }
 
+/* Make cards more compact */
 .card {
-  background: rgba(20, 30, 50, 0.7);
-  border-radius: 12px;
-  padding: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  background: rgba(20, 30, 50, 0.8);
+  border-radius: 10px;
+  padding: 8px;       /* reduced padding */
+  box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+  width: 100%;        /* fill the controls column */
+  box-sizing: border-box;
+  font-size: 13px;    /* slightly smaller type */
 }
 
 .card h3 {
@@ -67,21 +80,26 @@ html, body {
   letter-spacing: 1px;
 }
 
+/* Reduce spacing and make the button grid denser */
 .button-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); /* narrower buttons */
   gap: 6px;
 }
 
+/* Compact buttons */
 button {
   background: #123;
   color: #fff;
   border: 1px solid #0ff;
-  padding: 6px;
+  padding: 6px 6px;   /* shorter height */
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* keep labels tidy */
 }
 
 
@@ -89,5 +107,14 @@ button:hover {
   background: #046;
 }
 
-#statusBtn.ok { background: #0a0; }
+/* Slightly smaller active/status button styling */
+#statusBtn { font-size: 12px; padding: 6px 8px; }
 #statusBtn.lost { background: #a00; }
+
+/* Responsive: even narrower on small screens */
+@media (max-width: 800px) {
+  #controls { width: 160px; gap: 6px; right: 6px; top: 6px; }
+  .button-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 5px; }
+  button { font-size: 11px; padding: 5px 5px; }
+  .card { padding: 6px; font-size: 12px; }
+}
