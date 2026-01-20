@@ -57,7 +57,7 @@ def sensor_loop():
             ph = ps.pressure
             tc = ps.temperature
             pin = ph * 0.02953
-            tf = tc * 9 / 5 + 32
+            tf = tc #* 9 / 5 + 32
             pressure_buf.append(pin)
             med = sorted(pressure_buf)[len(pressure_buf)//2] if pressure_buf else pin
             depth_ft_raw = max(0.0, ((med/0.02953) - 1013.25) * 0.033488)
