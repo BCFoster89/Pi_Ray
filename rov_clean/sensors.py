@@ -57,7 +57,7 @@ def sensor_loop():
             ph = ps.pressure
             tc = ps.temperature
             pin = ph * 0.02953
-            tf = tc #* 9 / 5 + 32
+            tf = tc * 9 / 5 + 32
             pressure_buf.append(pin)
             med = sorted(pressure_buf)[len(pressure_buf)//2] if pressure_buf else pin
             depth_ft_raw = max(0.0, ((med/0.02953) - 1013.25) * 0.033488)
@@ -73,7 +73,21 @@ def sensor_loop():
                 ax -= accel_offsets['x']; ay -= accel_offsets['y']; az -= accel_offsets['z']
                 gx -= gyro_offsets['x']; gy -= gyro_offsets['y']; gz -= gyro_offsets['z']
 
-            itf = (imu.read_temp_c() * 9 / 5) + 32
+            #itf = (imu.read_temp_c() * 9 / 5) + 32
+            # read temperature from IMU (library name says _c but some firmware/libs return Kelvin/raw)
+            temp_raw = imu.read_temp_c()
+            if temp_raw is None:
+                temp_c = 0.0
+            else:
+                # if the reading looks like Kelvin (very large >200), convert to Celsius
+                temp_c = temp_raw - 273.15 if temp_raw > 200 else temp_raw
+
+            # convert to Fahrenheit for display
+            itf = (temp_c * 9 / 5) + 32
+
+            # optional debug log if values look odd
+            if temp_raw > 200 or temp_raw < -50:
+                log(f"[SENSOR] unusual raw IMU temp reading: {temp_raw} -> {temp_c} C / {itf} F")
 
             # Integration
             roll_i += gx * dt
