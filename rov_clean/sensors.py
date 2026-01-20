@@ -76,6 +76,7 @@ def sensor_loop():
             #itf = (imu.read_temp_c() * 9 / 5) + 32
             # read temperature from IMU (library name says _c but some firmware/libs return Kelvin/raw)
             temp_raw = imu.read_temp_c()
+            print(temp_raw)
             if temp_raw is None:
                 temp_c = 0.0
             else:
