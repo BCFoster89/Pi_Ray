@@ -88,7 +88,7 @@ def sensor_loop():
 
             # optional debug log if values look odd
             if temp_raw > 200 or temp_raw < -50:
-                log(f"[SENSOR] unusual raw IMU temp reading: {temp_raw} -> {temp_c} C / {itf} F")
+                #log(f"[SENSOR] unusual raw IMU temp reading: {temp_raw} -> {temp_c} C / {itf} F")
 
             # Integration
             roll_i += gx * dt
