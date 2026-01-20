@@ -87,7 +87,7 @@ def sensor_loop():
             itf = (temp_c * 9 / 5) + 32
 
             # optional debug log if values look odd
-            if temp_raw > 200 or temp_raw < -50:
+            #if temp_raw > 200 or temp_raw < -50:
                 #log(f"[SENSOR] unusual raw IMU temp reading: {temp_raw} -> {temp_c} C / {itf} F")
 
             # Integration
