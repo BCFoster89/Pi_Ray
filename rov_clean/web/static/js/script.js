@@ -153,7 +153,7 @@ function drawHUD(sensor){
 
   // Depth bottom-right
   ctx.fillStyle = "#0f0";
-  ctx.textAlign = "right";
+  ctx.textAlign = "center";
   ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, canvas.width-20, canvas.height-20);
 
   // Heading tape top-center
