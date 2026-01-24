@@ -132,7 +132,7 @@ function drawHUD(sensor){
   ctx.translate(cx, cy);
   ctx.rotate((-sensor.roll || 0) * Math.PI/180);
   let pitchOffset = (sensor.pitch || 0) * 5; // scale
-  ctx.strokeStyle = "#0ff";
+  ctx.strokeStyle = "#ff0";
   ctx.beginPath();
   ctx.moveTo(-300, pitchOffset);
   ctx.lineTo(300, pitchOffset);
@@ -140,7 +140,7 @@ function drawHUD(sensor){
 
   // Pitch ladder
   ctx.font = "14px Segoe UI";
-  ctx.fillStyle = "#0ff";
+  ctx.fillStyle = "#ff0";
   for(let p=-30;p<=30;p+=10){
     let offset = (p - (sensor.pitch||0)) * 5;
     ctx.beginPath();
@@ -153,8 +153,8 @@ function drawHUD(sensor){
 
   // Heading tape top-center
   let heading = sensor.yaw || 0;
-  ctx.fillStyle = "#0ff";
-  ctx.font = "bold 14px Arial"; // This sets the size to 30 pixels and makes it bold
+  ctx.fillStyle = "#ff0";
+  ctx.font = "14px Arial"; // This sets the size to 30 pixels and makes it bold
   ctx.textAlign = "center";
   ctx.fillText(`Heading: ${Math.round(heading)}°`, cx, 30);
   ctx.beginPath();
@@ -170,7 +170,7 @@ function drawHUD(sensor){
   }
 
   // Depth bottom-right
-  ctx.fillStyle = "#0f0";
+  ctx.fillStyle = "#ff0";
   ctx.font = "bold 20px Arial"; // This sets the size to 30 pixels and makes it bold
   ctx.textAlign = "left";
   ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, 40);
