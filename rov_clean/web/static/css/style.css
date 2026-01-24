@@ -108,7 +108,16 @@ button:hover {
 }
 
 /* Slightly smaller active/status button styling */
-#statusBtn { font-size: 12px; padding: 6px 8px; }
+#statusBtn {
+  font-size: 12px;
+  padding: 6px 8px;
+  background-color: #2ecc71;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  box-shadow: 0 0 6px rgba(46, 204, 113, 0.8);
+}
+
 #statusBtn.lost { background: #a00; }
 
 /* Responsive: even narrower on small screens */
