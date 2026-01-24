@@ -175,9 +175,9 @@ function drawHUD(sensor){
 
   // Depth bottom-right
   ctx.fillStyle = "#0f0";
-    ctx.font = "bold 16px Arial"; // This sets the size to 30 pixels and makes it bold
+    ctx.font = "bold 20px Arial"; // This sets the size to 30 pixels and makes it bold
   ctx.textAlign = "left";
-  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, canvas.height-60);
+  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, 20);
   
   // Roll & Pitch bottom-left
   ctx.fillStyle = "#ff0";
