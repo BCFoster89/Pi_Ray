@@ -173,6 +173,11 @@ function drawHUD(sensor){
     ctx.fillText(mark, x, 75);
   }
 
+  // Depth bottom-right
+  ctx.fillStyle = "#0f0";
+  ctx.textAlign = "center";
+  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, canvas.height-60);
+  
   // Roll & Pitch bottom-left
   ctx.fillStyle = "#ff0";
   ctx.textAlign = "left";
