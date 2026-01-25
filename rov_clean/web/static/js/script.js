@@ -159,33 +159,47 @@ function drawHUD(sensor){
   ctx.lineTo(300, pitchOffset);
   ctx.stroke();
 
-// Pitch ladder
+// === PITCH LADDER FIX ===
+  ctx.save();
+  
   let currentPitch = sensor.pitch || 0;
+  let pitchOffset = currentPitch * 5; // The vertical shift of the horizon
+
+  // Move the coordinate system to center + current pitch tilt
+  ctx.translate(cx, cy + pitchOffset); 
+  ctx.rotate((-sensor.roll || 0) * Math.PI/180);
+
+  // Draw the main Horizon Line at the new 0,0
+  ctx.strokeStyle = "#ff0";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-300, 0);
+  ctx.lineTo(300, 0);
+  ctx.stroke();
+
+  // Draw the Ladder Rungs
   ctx.font = "14px Segoe UI";
   ctx.fillStyle = "#ff0";
-  ctx.strokeStyle = "#ff0";
+  ctx.lineWidth = 1;
 
   for (let p = -30; p <= 30; p += 10) {
-    // 1. FIXED MATH: This ensures the ladder marks stay relative to the horizon
-    let offset = (currentPitch - p) * 5; 
+    if (p === 0) continue; // Skip 0 because we drew the horizon line above
+
+    // The offset is now ONLY the distance from 0 to the rung (e.g., 10 * 5 = 50px)
+    // We multiply by -1 so +10 is ABOVE the horizon
+    let rungY = -p * 5; 
     
     ctx.beginPath();
+    if (p < 0) ctx.setLineDash([5, 5]); else ctx.setLineDash([]);
     
-    // 2. DASHED LINES: Visually distinguishes 'Down' from 'Up'
-    if (p < 0) {
-      ctx.setLineDash([5, 5]); 
-    } else {
-      ctx.setLineDash([]); 
-    }
-
-    ctx.moveTo(-40, offset);
-    ctx.lineTo(40, offset);
+    ctx.moveTo(-40, rungY);
+    ctx.lineTo(40, rungY);
     ctx.stroke();
     
-    // 3. TEXT ALIGNMENT: Ensures the numbers follow the lines exactly
-    ctx.setLineDash([]); // Reset dash before drawing text
-    ctx.fillText(p + "°", 50, offset + 5);
+    ctx.setLineDash([]);
+    ctx.fillText(p + "°", 50, rungY + 5);
   }
+
   ctx.restore();
 
 // Heading tape top-center
