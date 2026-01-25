@@ -159,47 +159,17 @@ function drawHUD(sensor){
   ctx.lineTo(300, pitchOffset);
   ctx.stroke();
 
-// === PITCH LADDER FIX ===
-  ctx.save();
-  
-  let currentPitch = sensor.pitch || 0;
-  let pitchOffset = currentPitch * 5; // The vertical shift of the horizon
-
-  // Move the coordinate system to center + current pitch tilt
-  ctx.translate(cx, cy + pitchOffset); 
-  ctx.rotate((-sensor.roll || 0) * Math.PI/180);
-
-  // Draw the main Horizon Line at the new 0,0
-  ctx.strokeStyle = "#ff0";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(-300, 0);
-  ctx.lineTo(300, 0);
-  ctx.stroke();
-
-  // Draw the Ladder Rungs
+  // Pitch ladder
   ctx.font = "14px Segoe UI";
   ctx.fillStyle = "#ff0";
-  ctx.lineWidth = 1;
-
-  for (let p = -30; p <= 30; p += 10) {
-    if (p === 0) continue; // Skip 0 because we drew the horizon line above
-
-    // The offset is now ONLY the distance from 0 to the rung (e.g., 10 * 5 = 50px)
-    // We multiply by -1 so +10 is ABOVE the horizon
-    let rungY = -p * 5; 
-    
+  for(let p=-20;p<=20;p+=5){
+    let offset = (p - (sensor.pitch||0)) * 5;
     ctx.beginPath();
-    if (p < 0) ctx.setLineDash([5, 5]); else ctx.setLineDash([]);
-    
-    ctx.moveTo(-40, rungY);
-    ctx.lineTo(40, rungY);
+    ctx.moveTo(-40, offset);
+    ctx.lineTo(40, offset);
     ctx.stroke();
-    
-    ctx.setLineDash([]);
-    ctx.fillText(p + "°", 50, rungY + 5);
+    ctx.fillText(p+"°", 50, offset+5);
   }
-
   ctx.restore();
 
 // Heading tape top-center
