@@ -162,8 +162,8 @@ function drawHUD(sensor){
   // Pitch ladder
   ctx.font = "14px Segoe UI";
   ctx.fillStyle = "#ff0";
-  for(let p=-30;p<=30;p+=10){
-    let offset = -1 * (p - (sensor.pitch||0)) * 5;
+  for(let p=-20;p<=20;p+=5){
+    let offset = (p - (sensor.pitch||0)) * 5;
     ctx.beginPath();
     ctx.moveTo(-40, offset);
     ctx.lineTo(40, offset);
