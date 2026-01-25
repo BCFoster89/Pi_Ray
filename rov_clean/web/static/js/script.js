@@ -86,13 +86,14 @@ async function updateOverlay() {
    // Replace your existing telemetry section with this:
 const telemetryEl = document.getElementById("telemetry");
 
-// Define the order and labels you want
+// Updated displayOrder to match sensors.py keys
 const displayOrder = [
   { key: 'depth_ft', label: 'Depth', unit: 'ft' },
   { key: 'pitch', label: 'Pitch', unit: '°' },
   { key: 'roll', label: 'Roll', unit: '°' },
-  { key: 'heading', label: 'Heading', unit: '°' },
-  { key: 'temp_c', label: 'Temp', unit: '°C' }
+  { key: 'yaw', label: 'Heading', unit: '°' }, // Using 'yaw' for heading
+  { key: 'temperature_f', label: 'Water', unit: '°F' }, // Matches python 'temperature_f'
+  { key: 'imu_temp_f', label: 'Internal', unit: '°F' }  // Matches python 'imu_temp_f'
 ];
 
 telemetryEl.textContent = displayOrder
