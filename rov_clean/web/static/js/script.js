@@ -38,19 +38,19 @@ function toggleMotor(name){
 }
 
 function calibrateDepth(){
-  fetch('/cal_depth').then(r => r.text()).then(alert);
+  fetch('/cal_depth').then(r => r.text());
 }
 
 function calibrateHorizon(){
-  fetch('/cal_horizon').then(r => r.text()).then(alert);
+  fetch('/cal_horizon').then(r => r.text());
 }
 
 function zeroIMU(){
-  fetch('/zero_imu').then(r => r.text()).then(alert);
+  fetch('/zero_imu').then(r => r.text());
 }
 
 function toggleLED(){
-  fetch('/toggle_led').then(r => r.text()).then(alert);
+  fetch('/toggle_led').then(r => r.text());
 }
 
 // === STATUS HEARTBEAT ===
