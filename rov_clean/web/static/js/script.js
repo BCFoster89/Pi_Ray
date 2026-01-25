@@ -83,13 +83,26 @@ async function updateOverlay() {
     drawHUD(sensor);
 
     // update telemetry card
-    const telemetryEl = document.getElementById("telemetry");
-    telemetryEl.textContent = Object.entries(sensor)
-      .map(([k, v]) =>
-        // turn "depth_ft" -> "Depth Ft" and format "key: value"
-        `${k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}: ${v}`
-      )
-      .join('\n');
+   // Replace your existing telemetry section with this:
+const telemetryEl = document.getElementById("telemetry");
+
+// Define the order and labels you want
+const displayOrder = [
+  { key: 'depth_ft', label: 'Depth', unit: 'ft' },
+  { key: 'pitch', label: 'Pitch', unit: '°' },
+  { key: 'roll', label: 'Roll', unit: '°' },
+  { key: 'heading', label: 'Heading', unit: '°' },
+  { key: 'temp_c', label: 'Temp', unit: '°C' }
+];
+
+telemetryEl.textContent = displayOrder
+  .map(item => {
+    const val = sensor[item.key];
+    // Format the number to 1 decimal place if it exists
+    const displayVal = (typeof val === 'number') ? val.toFixed(1) : (val || '0.0');
+    return `${item.label.padEnd(8)}: ${displayVal} ${item.unit}`;
+  })
+  .join('\n');
 
     //below repalced with above
     //document.getElementById("telemetry").textContent =
@@ -103,13 +116,20 @@ async function updateOverlay() {
 updateOverlay();
 
 // === LOGS ===
-async function updateLogs(){
+async function updateLogs() {
   try {
     let r = await fetch('/logs', { cache: "no-store" });
     let text = await r.text();
-    document.getElementById("logs").textContent =
-      text.split("<br>").slice(-20).join("\n");
-  } catch (e){
+    const logsEl = document.getElementById("logs");
+    const logsCard = document.getElementById("logsCard");
+
+    // Clean up <br> tags and show last 20 lines
+    logsEl.textContent = text.split("<br>").slice(-20).join("\n");
+
+    // AUTO-SCROLL: This pushes the view to the bottom
+    logsCard.scrollTop = logsCard.scrollHeight;
+
+  } catch (e) {
     console.warn("Log fetch failed", e);
   }
   setTimeout(updateLogs, 1000);
