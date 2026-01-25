@@ -172,22 +172,46 @@ function drawHUD(sensor){
   }
   ctx.restore();
 
-  // Heading tape top-center
+// Heading tape top-center
   let heading = sensor.yaw || 0;
   ctx.fillStyle = "#ff0";
-  ctx.font = "14px Arial"; // This sets the size to 30 pixels and makes it bold
+  ctx.font = "14px Arial";
   ctx.textAlign = "center";
   ctx.fillText(`Heading: ${Math.round(heading)}°`, cx, 30);
+  
+  // Helper to get cardinal labels
+  const getCardinal = (deg) => {
+    // Normalize degree to 0-359
+    let d = (Math.round(deg) + 360) % 360;
+    const directions = {
+      0: "N", 45: "NE", 90: "E", 135: "SE", 
+      180: "S", 225: "SW", 270: "W", 315: "NW"
+    };
+    return directions[d] || d; // Return letter if it exists, otherwise return the number
+  };
+
   ctx.beginPath();
-  for(let i=-90;i<=90;i+=10){
-    let mark = Math.round(heading + i); // Round the mark to remove decimals
-    if (mark<0) mark+=360;
-    if (mark>=360) mark-=360;
-    let x = cx + i*3;
-    ctx.moveTo(x,50);
-    ctx.lineTo(x,60);
+  for(let i=-90; i<=90; i+=10){
+    let mark = heading + i;
+    // Normalize for the lookup
+    let normalizedMark = (Math.round(mark) + 360) % 360;
+    
+    let x = cx + i * 5; // Increased spacing to 5 for better readability with letters
+    ctx.moveTo(x, 50);
+    ctx.lineTo(x, 60);
     ctx.stroke();
-    ctx.fillText(mark, x, 75);
+    
+    // Draw the Cardinal letter or the Number
+    let label = getCardinal(normalizedMark);
+    
+    // Make letters bold or slightly larger if you want them to pop
+    if (typeof label === "string") {
+      ctx.font = "bold 16px Arial";
+    } else {
+      ctx.font = "12px Arial";
+    }
+    
+    ctx.fillText(label, x, 75);
   }
 
   // Depth bottom-right
