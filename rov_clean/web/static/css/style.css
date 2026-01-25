@@ -53,6 +53,18 @@ html, body {
   align-items: flex-end; /* keep cards flush to the right edge */
 }
 
+#logsCard {
+  height: 250px;       /* Or whatever height fits your HUD */
+  overflow-y: auto;    /* Enables the scrollbar */
+  display: flex;
+  flex-direction: column;
+}
+
+#logs {
+  margin-top: auto;    /* Optional: Keeps short logs pinned to the bottom */
+  white-space: pre-wrap; 
+  word-wrap: break-word;
+}
 
 #telemetry, #logs {
   font-family: "Courier New", Courier, monospace;
