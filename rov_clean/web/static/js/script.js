@@ -159,16 +159,32 @@ function drawHUD(sensor){
   ctx.lineTo(300, pitchOffset);
   ctx.stroke();
 
-  // Pitch ladder
+// Pitch ladder
+  let currentPitch = sensor.pitch || 0;
   ctx.font = "14px Segoe UI";
   ctx.fillStyle = "#ff0";
-  for(let p=-20;p<=20;p+=5){
-    let offset = (p - (sensor.pitch||0)) * 5;
+  ctx.strokeStyle = "#ff0";
+
+  for (let p = -30; p <= 30; p += 10) {
+    // 1. FIXED MATH: This ensures the ladder marks stay relative to the horizon
+    let offset = (currentPitch - p) * 5; 
+    
     ctx.beginPath();
+    
+    // 2. DASHED LINES: Visually distinguishes 'Down' from 'Up'
+    if (p < 0) {
+      ctx.setLineDash([5, 5]); 
+    } else {
+      ctx.setLineDash([]); 
+    }
+
     ctx.moveTo(-40, offset);
     ctx.lineTo(40, offset);
     ctx.stroke();
-    ctx.fillText(p+"°", 50, offset+5);
+    
+    // 3. TEXT ALIGNMENT: Ensures the numbers follow the lines exactly
+    ctx.setLineDash([]); // Reset dash before drawing text
+    ctx.fillText(p + "°", 50, offset + 5);
   }
   ctx.restore();
 
