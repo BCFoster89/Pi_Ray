@@ -175,44 +175,53 @@ function drawHUD(sensor){
 // Heading tape top-center
   let heading = sensor.yaw || 0;
   ctx.fillStyle = "#ff0";
-  ctx.font = "14px Arial";
+  ctx.font = "bold 16px Arial";
   ctx.textAlign = "center";
-  ctx.fillText(`Heading: ${Math.round(heading)}°`, cx, 30);
   
-  // Helper to get cardinal labels
-  const getCardinal = (deg) => {
-    // Normalize degree to 0-359
-    let d = (Math.round(deg) + 360) % 360;
-    const directions = {
-      0: "N", 45: "NE", 90: "E", 135: "SE", 
-      180: "S", 225: "SW", 270: "W", 315: "NW"
-    };
-    return directions[d] || d; // Return letter if it exists, otherwise return the number
-  };
+  // 1. Draw the actual digital readout in the center
+  ctx.fillText(`${Math.round((heading + 360) % 360)}°`, cx, 25);
 
+  // 2. Setup the tape
+  let spacing = 5; // pixels per degree
+  let snapHeading = Math.floor(heading / 10) * 10; // The nearest 10° mark
+  
   ctx.beginPath();
-  for(let i=-90; i<=90; i+=10){
-    let mark = heading + i;
-    // Normalize for the lookup
-    let normalizedMark = (Math.round(mark) + 360) % 360;
+  // We draw 9 marks to the left and 9 to the right of our "snapped" heading
+  for (let i = -90; i <= 90; i += 10) {
+    let mark = snapHeading + i;
     
-    let x = cx + i * 5; // Increased spacing to 5 for better readability with letters
-    ctx.moveTo(x, 50);
-    ctx.lineTo(x, 60);
+    // Calculate position: (The mark position) - (exact heading)
+    // This creates the smooth sliding effect
+    let x = cx + (mark - heading) * spacing;
+    
+    // Wrap the number for display (0-359)
+    let displayMark = (mark + 360) % 360;
+
+    // Draw the tick mark
+    ctx.moveTo(x, 45);
+    ctx.lineTo(x, 55);
     ctx.stroke();
-    
-    // Draw the Cardinal letter or the Number
-    let label = getCardinal(normalizedMark);
-    
-    // Make letters bold or slightly larger if you want them to pop
-    if (typeof label === "string") {
-      ctx.font = "bold 16px Arial";
-    } else {
-      ctx.font = "12px Arial";
-    }
-    
-    ctx.fillText(label, x, 75);
+
+    // 3. Draw the Label (Cardinal or Number)
+    const getCardinal = (d) => {
+      const directions = {0:"N", 45:"NE", 90:"E", 135:"SE", 180:"S", 225:"SW", 270:"W", 315:"NW"};
+      return directions[d] !== undefined ? directions[d] : d;
+    };
+
+    let label = getCardinal(displayMark);
+    ctx.font = (typeof label === "string") ? "bold 16px Arial" : "12px Arial";
+    ctx.fillText(label, x, 70);
   }
+
+  // 4. Draw a "Lubber Line" (the center pointer)
+  ctx.strokeStyle = "#f00"; // Red pointer
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, 40);
+  ctx.lineTo(cx, 60);
+  ctx.stroke();
+  ctx.lineWidth = 1; // Reset for other drawings
+  ctx.strokeStyle = "#ff0"; // Reset to yellow
 
   // Depth bottom-right
   ctx.fillStyle = "#ff0";
