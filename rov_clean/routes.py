@@ -41,9 +41,10 @@ def init_app(app):
         for name, state in list(motor_states.items()):
             if state == "on":
                 try:
-                    motor.toggle(name)   # toggle() will turn it off if currently on
-                    motor_states[name] = "off"
-                    stopped.append(name)
+                    result = motor.toggle(name)
+                    if result == "off":
+                        motor_states[name] = "off"
+                        stopped.append(name)
                 except Exception as e:
                     log(f"[MOTOR] failed stopping {name}: {e}")
         return jsonify({"stopped": stopped})
@@ -113,9 +114,10 @@ def init_app(app):
     def motor_toggle(name):
         if name not in MOTOR_GROUPS:
             return jsonify({"error": "Invalid motor group"}), 400
-        state = motor.toggle(name)
-        motor_states[name] = state
-        return jsonify({"group": name, "state": state})
+        result = motor.toggle(name)
+        if result in ("on", "off"):
+            motor_states[name] = result
+        return jsonify({"group": name, "state": result})
 
     @app.route("/motor_status")
     def motor_status():
