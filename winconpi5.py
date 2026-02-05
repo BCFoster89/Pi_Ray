@@ -24,8 +24,8 @@ button_to_motor = {
     1: "b",             # B button
     4: "left_trigger",  # LB (mapped to LT group)
     5: "right_trigger", # RB (mapped to RT group)
-    7: "lights",         # Start → lights
-    6: "dive"         # Start → lights
+    7: "lights",        # Start → toggle LED
+    6: "dive"           # Back → dive motors
 }
 
 # Track previous button states
