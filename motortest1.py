@@ -3,11 +3,11 @@ from time import sleep
 
 # --- CONFIGURATION ---
 # Change '18' to the GPIO pin you are using (BCM numbering)
-MOTOR_PIN = 18 
+MOTOR_PIN = 6 
 
 # Initialize the motor pin
 # Default frequency is usually 100Hz
-motor = PWMOutputDevice(MOTOR_PIN, active_high=True, initial_value=0, frequency=100)
+motor = PWMOutputDevice(MOTOR_PIN, active_high=True, initial_value=0, frequency=200)
 
 print("--- Raspberry Pi PWM Motor Tester ---")
 print("Commands: 'd' for Duty Cycle (0-100), 'f' for Frequency (Hz), 'q' to Quit")
