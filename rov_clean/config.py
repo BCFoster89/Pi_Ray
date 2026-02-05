@@ -6,6 +6,7 @@ motor_pins = [6, 8, 12, 13, 16, 20]
 led_pin = 24
 led_state = False
 
+# Legacy motor groups (kept for backward compatibility with toggle mode)
 MOTOR_GROUPS = {
     'x': [12, 13],
     'y': [8, 12],
@@ -20,6 +21,59 @@ motor_states = {name: "off" for name in MOTOR_GROUPS}
 MAX_ACTIVE_GROUPS = 1
 GROUP_STAGGER_S = 0.25
 MIN_ACTIVATE_INTERVAL_S = 0.5
+
+# =============================================================================
+# PWM VECTORED THRUST CONFIGURATION
+# =============================================================================
+
+# PWM settings
+PWM_CONFIG = {
+    'frequency': 200,       # PWM frequency in Hz
+    'deadband': 0.05,       # Ignore inputs below 5%
+    'ramp_rate': 0.15,      # Max duty cycle change per update (prevents voltage spikes)
+    'stagger_delay': 0.05,  # Delay between motor updates to prevent inrush current
+    'watchdog_timeout': 0.5 # Stop motors if no command received in 500ms
+}
+
+# Thruster layout (based on motor groups analysis):
+#         FRONT
+#     [8]-------[12]
+#      |         |
+#      |   ROV   |
+#      |         |
+#    [16]-------[13]
+#         REAR
+#
+# Vertical thrusters: [6] and [20]
+
+# Thrust mixing matrix for horizontal thrusters
+# Each motor's contribution to surge (forward/back), sway (strafe), yaw (rotation)
+# Values: +1.0 = positive contribution, -1.0 = negative contribution
+THRUST_MIX = {
+    # pin: [surge, sway, yaw]
+    8:  [+1.0, -1.0, +1.0],  # Front-Left: forward, strafe-left, turn-right
+    12: [+1.0, +1.0, -1.0],  # Front-Right: forward, strafe-right, turn-left
+    16: [+1.0, -1.0, -1.0],  # Rear-Left: forward, strafe-left, turn-left
+    13: [+1.0, +1.0, +1.0],  # Rear-Right: forward, strafe-right, turn-right
+}
+
+# Vertical thrust mixing (dive motors)
+# These are BIDIRECTIONAL - positive heave = ascend, negative = descend
+VERTICAL_MIX = {
+    6:  1.0,   # Dive motor 1
+    20: 1.0,  # Dive motor 2
+}
+
+# Motors that are bidirectional (only dive motors)
+BIDIRECTIONAL_PINS = [6, 20]
+
+# Current PWM state (duty cycles for each motor, 0.0-1.0)
+pwm_state = {
+    'duties': {p: 0.0 for p in motor_pins},
+    'active': False,
+    'last_update': 0.0,
+    'control_mode': 'manual'  # 'manual' or 'pwm'
+}
 
 # Shared sensor data
 sensor_data = {

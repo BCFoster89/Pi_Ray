@@ -1,12 +1,12 @@
 # routes.py
-from flask import render_template, jsonify, Response
+from flask import render_template, jsonify, Response, request
 import io, time
 import RPi.GPIO as GPIO
 
 from logger import log, log_buffer
-from config import sensor_data, led_pin, motor_states, MOTOR_GROUPS, led_state
+from config import sensor_data, led_pin, motor_states, MOTOR_GROUPS, led_state, pwm_state
 from calibration import calib, cal_lock, save_calib
-from motors import motor
+from motors import motor, pwm_motor
 import sensors   # ensures sensor loop is running
 from camera_module import generate_frames
 
@@ -36,7 +36,13 @@ def init_app(app):
 # inside init_app(app) alongside other routes
     @app.route("/motor/all_stop")
     def motor_all_stop():
-        # turn off any groups currently reported as "on"
+        # Stop PWM motors first
+        try:
+            pwm_motor.emergency_stop()
+        except Exception as e:
+            log(f"[MOTOR] PWM emergency stop failed: {e}")
+
+        # Also turn off any legacy groups currently reported as "on"
         stopped = []
         for name, state in list(motor_states.items()):
             if state == "on":
@@ -47,7 +53,7 @@ def init_app(app):
                         stopped.append(name)
                 except Exception as e:
                     log(f"[MOTOR] failed stopping {name}: {e}")
-        return jsonify({"stopped": stopped})
+        return jsonify({"stopped": stopped, "pwm_stopped": True})
     
     @app.route("/toggle_led")
     def toggle_led():
@@ -127,6 +133,66 @@ def init_app(app):
             calib['depth_zero_ft'] = sensor_data['depth_ft'] + calib['depth_zero_ft']
         save_calib()
         return "Surface Set"
+
+    # ==========================================================================
+    # PWM VECTORED THRUST CONTROL ENDPOINTS
+    # ==========================================================================
+
+    @app.route("/motor/pwm", methods=["POST"])
+    def motor_pwm():
+        """
+        Receive axis values from controller and set motor PWM duty cycles.
+
+        Expected JSON body:
+        {
+            "surge": 0.0,   # -1.0 to 1.0 (forward/back from left stick Y)
+            "sway": 0.0,    # -1.0 to 1.0 (strafe from left stick X)
+            "yaw": 0.0,     # -1.0 to 1.0 (rotation from right stick X)
+            "heave": 0.0    # -1.0 to 1.0 (dive/ascend from triggers)
+        }
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "No JSON data received"}), 400
+
+            surge = float(data.get('surge', 0.0))
+            sway = float(data.get('sway', 0.0))
+            yaw = float(data.get('yaw', 0.0))
+            heave = float(data.get('heave', 0.0))
+
+            # Clamp values to valid range
+            surge = max(-1.0, min(1.0, surge))
+            sway = max(-1.0, min(1.0, sway))
+            yaw = max(-1.0, min(1.0, yaw))
+            heave = max(-1.0, min(1.0, heave))
+
+            # Set thrust vector and get resulting duty cycles
+            duties = pwm_motor.set_thrust_vector(surge, sway, yaw, heave)
+
+            return jsonify({
+                "success": True,
+                "duties": {str(k): round(v, 3) for k, v in duties.items()}
+            })
+
+        except Exception as e:
+            log(f"[PWM] Error processing PWM command: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/motor/pwm_status")
+    def motor_pwm_status():
+        """Return current PWM duty cycles for all motors."""
+        try:
+            status = pwm_motor.get_status()
+            return jsonify({
+                "duties": {str(k): round(v, 3) for k, v in status['duties'].items()},
+                "active": status['active'],
+                "last_update": status['last_update'],
+                "control_mode": status['control_mode']
+            })
+        except Exception as e:
+            log(f"[PWM] Error getting PWM status: {e}")
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/video_feed")
     def video_feed():
