@@ -2,7 +2,8 @@
 import json, os, threading
 from logger import log
 
-CALIB_FILE = "calibration.json"
+# Use absolute path relative to this module's location
+CALIB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
 calib = {'roll_offset': 0, 'pitch_offset': 0, 'yaw_offset': 0, 'depth_zero_ft': 0}
 cal_lock = threading.Lock()
 

@@ -119,6 +119,13 @@ button:hover {
   background: #046;
 }
 
+/* Active state for motor buttons when motors are running */
+button.active {
+  background: #0a4;
+  border-color: #0f0;
+  box-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
+}
+
 /* Slightly smaller active/status button styling */
 #statusBtn {
   font-size: 12px;

@@ -51,10 +51,7 @@ def init_app(app):
     
     @app.route("/toggle_led")
     def toggle_led():
-        # update global led state in config
-        # import inside function to avoid circular import issues on reload
-        from config import led_state as _led_state_var
-        # we must update mutable in config module
+        # Update LED state in config module
         import config as cfg
         cfg.led_state = not cfg.led_state
         GPIO.output(led_pin, GPIO.HIGH if cfg.led_state else GPIO.LOW)
@@ -72,15 +69,15 @@ def init_app(app):
             calib['pitch_offset'] = 0.0
             calib['yaw_offset'] = 0.0
             log("[CAL] Zero Horizon pressed")
+        save_calib()
         return "Horizon Zeroed"
 
     @app.route("/zero_imu")
     def zero_imu():
         import sensors as s
-        global_vars_changed_msg = ""
         with cal_lock:
             if not s.imu_offsets_enabled:
-                # expected gravity vector along Z in body frame? original assumed X; keep original semantics:
+                # Expected gravity vector along Z axis in body frame (1g downward)
                 expected = {'x': 0.0, 'y': 0.0, 'z': 1.0}
 
                 ax = sensor_data['accel_x']
@@ -96,7 +93,7 @@ def init_app(app):
                 s.gyro_offsets['z'] = sensor_data['gyro_z']
 
                 s.imu_offsets_enabled = True
-                msg = "IMU calibration offsets applied (gravity aligned to X)"
+                msg = "IMU calibration offsets applied (gravity aligned to Z)"
             else:
                 s.accel_offsets = {'x': 0.0, 'y': 0.0, 'z': 0.0}
                 s.gyro_offsets  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
@@ -126,7 +123,8 @@ def init_app(app):
     @app.route("/cal_depth")
     def cal_depth():
         with cal_lock:
-            calib['depth_zero_ft'] = sensor_data['depth_ft']
+            # Add current offset back to get raw depth, then set that as new zero
+            calib['depth_zero_ft'] = sensor_data['depth_ft'] + calib['depth_zero_ft']
         save_calib()
         return "Surface Set"
 
