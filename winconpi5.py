@@ -43,9 +43,9 @@ AXIS_MAP = {
 }
 
 # Trigger calibration - adjust these based on your controller
-# Your triggers: released = -0.5, fully pressed = +0.5
-TRIGGER_MIN = -0.5   # Value when trigger is released
-TRIGGER_MAX = 0.5    # Value when trigger is fully pressed
+# Your triggers: released = 0.0, fully pressed = 1.0
+TRIGGER_MIN = 0.0    # Value when trigger is released
+TRIGGER_MAX = 1.0    # Value when trigger is fully pressed
 
 # Button mapping for non-PWM functions
 BUTTON_MAP = {

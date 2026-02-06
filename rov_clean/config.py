@@ -57,14 +57,18 @@ PWM_CONFIG = {
 
 # Thrust mixing matrix for horizontal thrusters
 # Each motor's contribution to surge (forward/back), sway (strafe), yaw (rotation)
-# Values: +1.0 = positive contribution, -1.0 = negative contribution
+# Values: +1.0 = responds to positive input, -1.0 = responds to negative input
 # NOTE: Only horizontal thrusters are used for surge/sway/yaw
+#
+# Surge: Forward (push stick up) = front motors, Backward = rear motors
+# Sway:  Left strafe = left motors, Right strafe = right motors
+# Yaw:   Turn right = left motors push, right motors don't (differential thrust)
 THRUST_MIX = {
     # pin: [surge, sway, yaw]
     8:  [+1.0, -1.0, +1.0],  # Front-Left: forward, strafe-left, turn-right
     12: [+1.0, +1.0, -1.0],  # Front-Right: forward, strafe-right, turn-left
-    16: [+1.0, -1.0, -1.0],  # Rear-Left: forward, strafe-left, turn-left
-    13: [+1.0, +1.0, +1.0],  # Rear-Right: forward, strafe-right, turn-right
+    16: [-1.0, -1.0, -1.0],  # Rear-Left: backward, strafe-left, turn-left
+    13: [-1.0, +1.0, +1.0],  # Rear-Right: backward, strafe-right, turn-right
 }
 
 # Vertical thrust mixing - SEPARATE descend and ascend
