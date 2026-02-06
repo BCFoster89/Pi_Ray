@@ -1,34 +1,64 @@
-async function pollMotorStatus(){
+// === PWM THRUSTER STATUS ===
+async function pollPWMStatus() {
   try {
-    let r = await fetch('/motor_status');
-    let res = await r.json();
+    let r = await fetch('/motor/pwm_status', { cache: "no-store" });
+    let data = await r.json();
 
-    let btnMap = {
-      "y": "btn-y",
-      "x": "btn-x",
-      "b": "btn-b",
-      "a": "btn-a",
-      "right_trigger": "btn-rt",
-      "left_trigger": "btn-lt",
-      "dive": "btn-dive"
-    };
-
-    for (let group in btnMap){
-      let btn = document.getElementById(btnMap[group]);
-      if (!btn) continue;
-      if (res[group] === "on"){
-        btn.classList.add("active");
-      } else {
-        btn.classList.remove("active");
-      }
+    // Update each thruster display
+    for (let pin in data.duties) {
+      updateThrusterDisplay(pin, data.duties[pin]);
     }
+
+    // Update control mode indicator
+    const modeEl = document.getElementById('control-mode');
+    if (modeEl) {
+      modeEl.textContent = `Mode: ${data.control_mode.toUpperCase()}`;
+      modeEl.classList.remove('pwm', 'manual');
+      modeEl.classList.add(data.control_mode);
+    }
+
   } catch (e) {
-    console.error("motor_status fetch failed", e);
+    console.error("PWM status fetch failed", e);
   }
 }
 
-// poll every 300ms
-setInterval(pollMotorStatus, 500);
+function updateThrusterDisplay(pin, duty) {
+  const fill = document.getElementById(`fill-${pin}`);
+  const value = document.getElementById(`duty-${pin}`);
+
+  if (!fill || !value) return;
+
+  const percent = Math.round(duty * 100);
+  fill.style.width = `${percent}%`;
+  value.textContent = `${percent}%`;
+
+  // Color coding based on intensity
+  fill.classList.remove('medium', 'high');
+  if (percent > 75) {
+    fill.classList.add('high');
+  } else if (percent > 40) {
+    fill.classList.add('medium');
+  }
+}
+
+// Poll PWM status at 10Hz for smooth updates
+setInterval(pollPWMStatus, 100);
+
+// === EMERGENCY STOP ===
+function emergencyStop() {
+  fetch('/motor/all_stop')
+    .then(r => r.json())
+    .then(d => {
+      console.log("Emergency stop:", d);
+      // Flash screen to confirm
+      document.body.style.boxShadow = 'inset 0 0 100px rgba(255, 0, 0, 0.5)';
+      setTimeout(() => {
+        document.body.style.boxShadow = 'none';
+      }, 300);
+    })
+    .catch(console.error);
+}
+
 // === BUTTON FUNCTIONS ===
 function toggleMotor(name){
   fetch(`/motor/${name}`)
