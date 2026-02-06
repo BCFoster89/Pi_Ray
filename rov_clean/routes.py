@@ -145,10 +145,11 @@ def init_app(app):
 
         Expected JSON body:
         {
-            "surge": 0.0,   # -1.0 to 1.0 (forward/back from left stick Y)
-            "sway": 0.0,    # -1.0 to 1.0 (strafe from left stick X)
-            "yaw": 0.0,     # -1.0 to 1.0 (rotation from right stick X)
-            "heave": 0.0    # -1.0 to 1.0 (dive/ascend from triggers)
+            "surge": 0.0,    # -1.0 to 1.0 (forward/back from left stick Y)
+            "sway": 0.0,     # -1.0 to 1.0 (strafe from left stick X)
+            "yaw": 0.0,      # -1.0 to 1.0 (rotation from right stick X)
+            "descend": 0.0,  # 0.0 to 1.0 (left trigger - descend intensity)
+            "ascend": 0.0    # 0.0 to 1.0 (right trigger - ascend intensity)
         }
         """
         try:
@@ -159,16 +160,18 @@ def init_app(app):
             surge = float(data.get('surge', 0.0))
             sway = float(data.get('sway', 0.0))
             yaw = float(data.get('yaw', 0.0))
-            heave = float(data.get('heave', 0.0))
+            descend = float(data.get('descend', 0.0))
+            ascend = float(data.get('ascend', 0.0))
 
             # Clamp values to valid range
             surge = max(-1.0, min(1.0, surge))
             sway = max(-1.0, min(1.0, sway))
             yaw = max(-1.0, min(1.0, yaw))
-            heave = max(-1.0, min(1.0, heave))
+            descend = max(0.0, min(1.0, descend))  # 0-1 range for triggers
+            ascend = max(0.0, min(1.0, ascend))    # 0-1 range for triggers
 
             # Set thrust vector and get resulting duty cycles
-            duties = pwm_motor.set_thrust_vector(surge, sway, yaw, heave)
+            duties = pwm_motor.set_thrust_vector(surge, sway, yaw, descend, ascend)
 
             return jsonify({
                 "success": True,

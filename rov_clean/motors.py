@@ -4,13 +4,17 @@ import threading
 import RPi.GPIO as GPIO
 from gpiozero import PWMOutputDevice
 from logger import log
-from config import (motor_pins, MOTOR_GROUPS, MAX_ACTIVE_GROUPS, GROUP_STAGGER_S,
-                    MIN_ACTIVATE_INTERVAL_S, THRUST_MIX, VERTICAL_MIX,
-                    BIDIRECTIONAL_PINS, PWM_CONFIG, pwm_state)
+from config import (motor_pins, horizontal_pins, descend_pins, ascend_pins,
+                    MOTOR_GROUPS, MAX_ACTIVE_GROUPS, GROUP_STAGGER_S,
+                    MIN_ACTIVATE_INTERVAL_S, THRUST_MIX, DESCEND_MIX, ASCEND_MIX,
+                    PWM_CONFIG, pwm_state)
 
 
 class MotorController:
     """Legacy on/off motor controller for manual button control."""
+
+    # Pins that actually exist on the Pi (exclude placeholders)
+    REAL_PINS = horizontal_pins + descend_pins
 
     def __init__(self):
         self.status = {p: 0 for p in motor_pins}
@@ -21,14 +25,20 @@ class MotorController:
     def toggle(self, name):
         now = time.time()
         pins = MOTOR_GROUPS[name]
+        # Filter to only real pins (skip placeholder pins like 1, 2)
+        real_pins = [p for p in pins if p in self.REAL_PINS]
+        if not real_pins:
+            log(f"[MOTOR] {name} has no real pins configured yet")
+            return "denied"
+
         with self.lock:
-            turn_on = any(self.status[p] == 0 for p in pins)
+            turn_on = any(self.status[p] == 0 for p in real_pins)
             if turn_on:
                 if len(self.active) >= MAX_ACTIVE_GROUPS:
                     return "denied"
                 if now - self.last_time < MIN_ACTIVATE_INTERVAL_S:
                     return "wait"
-                for p in pins:
+                for p in real_pins:
                     self.status[p] = 1
                     GPIO.output(p, GPIO.HIGH)
                     log(f"[MOTOR] {name} ON motor {p}")
@@ -37,7 +47,7 @@ class MotorController:
                 self.last_time = now
                 return "on"
             else:
-                for p in pins:
+                for p in real_pins:
                     self.status[p] = 0
                     GPIO.output(p, GPIO.LOW)
                 self.active.discard(name)
@@ -47,6 +57,9 @@ class MotorController:
 
 class PWMMotorController:
     """PWM-based motor controller for proportional vectored thrust control."""
+
+    # Pins that actually exist on the Pi (exclude placeholders like 1, 2)
+    REAL_PINS = horizontal_pins + descend_pins
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -74,12 +87,15 @@ class PWMMotorController:
 
             log("[PWM] Initializing PWM motor controller...")
 
-            # Clean up GPIO before initializing gpiozero PWM
-            for p in motor_pins:
-                GPIO.output(p, GPIO.LOW)
+            # Clean up GPIO before initializing gpiozero PWM (only real pins)
+            for p in self.REAL_PINS:
+                try:
+                    GPIO.output(p, GPIO.LOW)
+                except:
+                    pass
 
-            # Initialize PWM devices for each motor
-            for pin in motor_pins:
+            # Initialize PWM devices for each real motor pin (skip placeholders)
+            for pin in self.REAL_PINS:
                 try:
                     self.pwm_devices[pin] = PWMOutputDevice(
                         pin,
@@ -102,15 +118,16 @@ class PWMMotorController:
         sign = 1.0 if value > 0 else -1.0
         return sign * (abs(value) - self.deadband) / (1.0 - self.deadband)
 
-    def calculate_motor_duties(self, surge, sway, yaw, heave):
+    def calculate_motor_duties(self, surge, sway, yaw, descend, ascend):
         """
         Calculate PWM duty cycles for all motors based on thrust vector.
 
         Args:
-            surge: -1.0 to +1.0 (forward/back)
-            sway:  -1.0 to +1.0 (strafe left/right)
-            yaw:   -1.0 to +1.0 (rotate left/right)
-            heave: -1.0 to +1.0 (descend/ascend)
+            surge:   0.0 to 1.0 (forward) or -1.0 to 0.0 (back)
+            sway:    -1.0 to +1.0 (strafe left/right)
+            yaw:     -1.0 to +1.0 (rotate left/right)
+            descend: 0.0 to 1.0 (left trigger - descend intensity)
+            ascend:  0.0 to 1.0 (right trigger - ascend intensity)
 
         Returns:
             dict of {pin: duty_cycle} where duty_cycle is 0.0-1.0
@@ -118,6 +135,7 @@ class PWMMotorController:
         duties = {}
 
         # Horizontal thrusters (unidirectional - only positive duty cycle)
+        # Only surge/sway/yaw affect these - NOT descend/ascend
         for pin, (s_mix, w_mix, y_mix) in THRUST_MIX.items():
             # Calculate raw thrust contribution
             raw = surge * s_mix + sway * w_mix + yaw * y_mix
@@ -125,18 +143,13 @@ class PWMMotorController:
             # Negative values mean "this motor doesn't contribute in this direction"
             duties[pin] = max(0.0, min(1.0, raw))
 
-        # Vertical thrusters (bidirectional)
-        for pin, h_mix in VERTICAL_MIX.items():
-            raw = heave * h_mix
-            if pin in BIDIRECTIONAL_PINS:
-                # Bidirectional: map -1..+1 to 0..1 (0.5 = neutral/off)
-                # Actually, for simplicity with ESC, we'll use:
-                # positive heave = motor on at that duty
-                # negative heave = motor on at abs(duty) but ESC reverses
-                # For now, we'll just use absolute value since the ESC handles direction
-                duties[pin] = min(1.0, abs(raw))
-            else:
-                duties[pin] = max(0.0, min(1.0, raw))
+        # Descend motors (left trigger) - pins 6, 20
+        for pin, mix in DESCEND_MIX.items():
+            duties[pin] = max(0.0, min(1.0, descend * mix))
+
+        # Ascend motors (right trigger) - pins 1, 2 (placeholders)
+        for pin, mix in ASCEND_MIX.items():
+            duties[pin] = max(0.0, min(1.0, ascend * mix))
 
         return duties
 
@@ -151,15 +164,16 @@ class PWMMotorController:
 
         return current + delta
 
-    def set_thrust_vector(self, surge, sway, yaw, heave):
+    def set_thrust_vector(self, surge, sway, yaw, descend, ascend):
         """
         Set the thrust vector for the ROV.
 
         Args:
-            surge: -1.0 to +1.0 (forward/back from left stick Y)
-            sway:  -1.0 to +1.0 (strafe from left stick X)
-            yaw:   -1.0 to +1.0 (rotation from right stick X)
-            heave: -1.0 to +1.0 (dive/ascend from triggers)
+            surge:   -1.0 to +1.0 (forward/back from left stick Y)
+            sway:    -1.0 to +1.0 (strafe from left stick X)
+            yaw:     -1.0 to +1.0 (rotation from right stick X)
+            descend: 0.0 to 1.0 (left trigger - descend intensity)
+            ascend:  0.0 to 1.0 (right trigger - ascend intensity)
 
         Returns:
             dict of current duty cycles
@@ -170,16 +184,17 @@ class PWMMotorController:
         surge = self.apply_deadband(surge)
         sway = self.apply_deadband(sway)
         yaw = self.apply_deadband(yaw)
-        heave = self.apply_deadband(heave)
+        descend = self.apply_deadband(descend)
+        ascend = self.apply_deadband(ascend)
 
         # Calculate target duty cycles
-        target_duties = self.calculate_motor_duties(surge, sway, yaw, heave)
+        target_duties = self.calculate_motor_duties(surge, sway, yaw, descend, ascend)
 
         with self.lock:
             self.last_command_time = time.time()
 
-            # Apply smoothing and update motors with stagger delay
-            for pin in motor_pins:
+            # Apply smoothing and update motors with stagger delay (only real pins)
+            for pin in self.REAL_PINS:
                 target = target_duties.get(pin, 0.0)
                 smoothed = self.smooth_duty(pin, target)
 
@@ -190,7 +205,7 @@ class PWMMotorController:
                         self.pwm_devices[pin].value = smoothed
                     time.sleep(self.stagger_delay)
 
-            # Update shared state
+            # Update shared state (include all pins for UI display)
             pwm_state['duties'] = self.current_duties.copy()
             pwm_state['active'] = any(d > 0 for d in self.current_duties.values())
             pwm_state['last_update'] = self.last_command_time
