@@ -25,20 +25,20 @@ BASE_URL = "http://192.168.1.3:5000"
 # =============================================================================
 # AXIS MAPPING - Adjust these based on your specific controller
 # =============================================================================
-# Common Xbox controller axis mapping:
+# Your controller mapping (based on testing):
 # Axis 0: Left stick X (left=-1, right=+1)
 # Axis 1: Left stick Y (up=-1, down=+1)
-# Axis 2: Left trigger (released=-0.5, pressed=+0.5) - YOUR CONTROLLER
-# Axis 3: Right stick X (left=-1, right=+1)
-# Axis 4: Right stick Y (up=-1, down=+1)
-# Axis 5: Right trigger (released=-0.5, pressed=+0.5) - YOUR CONTROLLER
+# Axis 2: Right stick X (left=-1, right=+1)
+# Axis 3: Right stick Y (up=-1, down=+1)
+# Axis 4: Left trigger (released=0, pressed=1)
+# Axis 5: Right trigger (released=0, pressed=1)
 
 AXIS_MAP = {
     'left_x': 0,     # Left stick horizontal (strafe/sway)
     'left_y': 1,     # Left stick vertical (forward/surge)
-    'right_x': 3,    # Right stick horizontal (yaw/rotation)
-    'right_y': 4,    # Right stick vertical (unused)
-    'lt': 2,         # Left trigger (descend)
+    'right_x': 2,    # Right stick horizontal (yaw/rotation)
+    'right_y': 3,    # Right stick vertical (unused)
+    'lt': 4,         # Left trigger (descend)
     'rt': 5,         # Right trigger (ascend)
 }
 

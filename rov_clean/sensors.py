@@ -74,15 +74,17 @@ def sensor_loop():
                 gx -= gyro_offsets['x']; gy -= gyro_offsets['y']; gz -= gyro_offsets['z']
 
             # Read temperature from IMU
-            # The LSM6DSO has a 25°C offset that some libraries don't apply
+            # The SparkFun qwiic_lsm6dso library returns (raw/256) without the
+            # required +25°C offset. Real IC temps are typically 25-70°C, so
+            # raw readings below 40 (meaning "< 40°C") need the offset applied.
             temp_raw = imu.read_temp_c()
             if temp_raw is None:
                 temp_c = 25.0  # Default to room temp if no reading
             elif temp_raw > 200:
                 # Looks like Kelvin, convert to Celsius
                 temp_c = temp_raw - 273.15
-            elif temp_raw < 10:
-                # Likely missing 25°C offset (LSM6DSO quirk)
+            elif temp_raw < 40:
+                # Missing 25°C offset - qwiic_lsm6dso library quirk
                 temp_c = temp_raw + 25.0
             else:
                 temp_c = temp_raw

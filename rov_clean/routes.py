@@ -189,6 +189,8 @@ def init_app(app):
             status = pwm_motor.get_status()
             return jsonify({
                 "duties": {str(k): round(v, 3) for k, v in status['duties'].items()},
+                "descend": round(status['descend'], 3),
+                "ascend": round(status['ascend'], 3),
                 "active": status['active'],
                 "last_update": status['last_update'],
                 "control_mode": status['control_mode']

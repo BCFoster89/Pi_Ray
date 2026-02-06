@@ -69,6 +69,10 @@ class PWMMotorController:
         self.last_command_time = 0.0
         self.initialized = False
 
+        # Track vertical thrust input values for UI display
+        self.descend_value = 0.0
+        self.ascend_value = 0.0
+
         # Configuration
         self.frequency = PWM_CONFIG['frequency']
         self.deadband = PWM_CONFIG['deadband']
@@ -193,6 +197,10 @@ class PWMMotorController:
         with self.lock:
             self.last_command_time = time.time()
 
+            # Store vertical thrust values for UI display
+            self.descend_value = descend
+            self.ascend_value = ascend
+
             # Apply smoothing and update motors with stagger delay (only real pins)
             for pin in self.REAL_PINS:
                 target = target_duties.get(pin, 0.0)
@@ -225,6 +233,10 @@ class PWMMotorController:
                 if pin in self.pwm_devices:
                     self.pwm_devices[pin].value = 0.0
 
+            # Reset vertical thrust values
+            self.descend_value = 0.0
+            self.ascend_value = 0.0
+
             # Update shared state
             pwm_state['duties'] = {p: 0.0 for p in motor_pins}
             pwm_state['active'] = False
@@ -246,6 +258,8 @@ class PWMMotorController:
         with self.lock:
             return {
                 'duties': self.current_duties.copy(),
+                'descend': self.descend_value,
+                'ascend': self.ascend_value,
                 'active': any(d > 0 for d in self.current_duties.values()),
                 'last_update': self.last_command_time,
                 'control_mode': pwm_state['control_mode']
