@@ -4,10 +4,14 @@ async function pollPWMStatus() {
     let r = await fetch('/motor/pwm_status', { cache: "no-store" });
     let data = await r.json();
 
-    // Update each thruster display
+    // Update horizontal thruster displays by pin
     for (let pin in data.duties) {
       updateThrusterDisplay(pin, data.duties[pin]);
     }
+
+    // Update vertical thrust indicators (descend/ascend)
+    updateThrusterDisplay('descend', data.descend || 0);
+    updateThrusterDisplay('ascend', data.ascend || 0);
 
     // Update control mode indicator
     const modeEl = document.getElementById('control-mode');

@@ -263,8 +263,25 @@ button.active {
 }
 
 .thruster.vertical .thruster-label {
-  min-width: 40px;
+  min-width: 50px;
   text-align: right;
+}
+
+/* Ascend indicator styling - distinct from descend */
+.thruster.ascend-indicator .thruster-label {
+  color: #fa0;
+}
+
+.thruster.ascend-indicator .duty-fill {
+  background: linear-gradient(90deg, #a60, #fa0);
+}
+
+.thruster.ascend-indicator .duty-fill.medium {
+  background: linear-gradient(90deg, #a80, #fc0);
+}
+
+.thruster.ascend-indicator .duty-fill.high {
+  background: linear-gradient(90deg, #c40, #f80);
 }
 
 /* Emergency stop button */
