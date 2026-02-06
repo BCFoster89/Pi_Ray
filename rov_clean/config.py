@@ -2,7 +2,13 @@
 import RPi.GPIO as GPIO
 
 # Hardware config
-motor_pins = [6, 8, 12, 13, 16, 20]
+# Horizontal thrusters: 8, 12, 13, 16
+# Vertical thrusters: 6, 20 (descend), 1, 2 (ascend - placeholder pins)
+horizontal_pins = [8, 12, 13, 16]
+descend_pins = [6, 20]
+ascend_pins = [1, 2]  # PLACEHOLDER - will control same motors as descend but reversed
+motor_pins = horizontal_pins + descend_pins + ascend_pins
+
 led_pin = 24
 led_state = False
 
@@ -14,7 +20,8 @@ MOTOR_GROUPS = {
     'a': [13, 16],
     'left_trigger': [12, 16],
     'right_trigger': [8, 13],
-    'dive': [6, 20]
+    'descend': [6, 20],
+    'ascend': [1, 2]  # PLACEHOLDER
 }
 motor_states = {name: "off" for name in MOTOR_GROUPS}
 
@@ -44,11 +51,14 @@ PWM_CONFIG = {
 #    [16]-------[13]
 #         REAR
 #
-# Vertical thrusters: [6] and [20]
+# Vertical thrusters:
+#   Descend: pins 6, 20
+#   Ascend:  pins 1, 2 (PLACEHOLDER - same motors, reversed direction)
 
 # Thrust mixing matrix for horizontal thrusters
 # Each motor's contribution to surge (forward/back), sway (strafe), yaw (rotation)
 # Values: +1.0 = positive contribution, -1.0 = negative contribution
+# NOTE: Only horizontal thrusters are used for surge/sway/yaw
 THRUST_MIX = {
     # pin: [surge, sway, yaw]
     8:  [+1.0, -1.0, +1.0],  # Front-Left: forward, strafe-left, turn-right
@@ -57,15 +67,19 @@ THRUST_MIX = {
     13: [+1.0, +1.0, +1.0],  # Rear-Right: forward, strafe-right, turn-right
 }
 
-# Vertical thrust mixing (dive motors)
-# These are BIDIRECTIONAL - positive heave = ascend, negative = descend
-VERTICAL_MIX = {
-    6:  1.0,   # Dive motor 1
-    20: 1.0,  # Dive motor 2
+# Vertical thrust mixing - SEPARATE descend and ascend
+# Descend motors (left trigger) - pins 6, 20
+DESCEND_MIX = {
+    6:  1.0,   # Descend motor 1
+    20: 1.0,   # Descend motor 2
 }
 
-# Motors that are bidirectional (only dive motors)
-BIDIRECTIONAL_PINS = [6, 20]
+# Ascend motors (right trigger) - pins 1, 2 (PLACEHOLDER)
+# These will be the same physical motors as descend but with reversed direction
+ASCEND_MIX = {
+    1: 1.0,   # Ascend motor 1 (PLACEHOLDER)
+    2: 1.0,   # Ascend motor 2 (PLACEHOLDER)
+}
 
 # Current PWM state (duty cycles for each motor, 0.0-1.0)
 pwm_state = {
@@ -88,6 +102,7 @@ GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(led_pin, GPIO.OUT)
 GPIO.output(led_pin, GPIO.LOW)
-for p in motor_pins:
+# Only setup pins that exist on the Pi (skip placeholder pins 1, 2)
+for p in horizontal_pins + descend_pins:
     GPIO.setup(p, GPIO.OUT)
     GPIO.output(p, GPIO.LOW)

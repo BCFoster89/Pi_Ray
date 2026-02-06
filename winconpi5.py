@@ -28,10 +28,10 @@ BASE_URL = "http://192.168.1.3:5000"
 # Common Xbox controller axis mapping:
 # Axis 0: Left stick X (left=-1, right=+1)
 # Axis 1: Left stick Y (up=-1, down=+1)
-# Axis 2: Left trigger (released=-1, pressed=+1) OR Right stick X
-# Axis 3: Right stick Y (up=-1, down=+1) OR Right stick X
-# Axis 4: Right stick X (left=-1, right=+1) OR Left trigger
-# Axis 5: Right trigger (released=-1, pressed=+1)
+# Axis 2: Left trigger (released=-0.5, pressed=+0.5) - YOUR CONTROLLER
+# Axis 3: Right stick X (left=-1, right=+1)
+# Axis 4: Right stick Y (up=-1, down=+1)
+# Axis 5: Right trigger (released=-0.5, pressed=+0.5) - YOUR CONTROLLER
 
 AXIS_MAP = {
     'left_x': 0,     # Left stick horizontal (strafe/sway)
@@ -41,6 +41,11 @@ AXIS_MAP = {
     'lt': 2,         # Left trigger (descend)
     'rt': 5,         # Right trigger (ascend)
 }
+
+# Trigger calibration - adjust these based on your controller
+# Your triggers: released = -0.5, fully pressed = +0.5
+TRIGGER_MIN = -0.5   # Value when trigger is released
+TRIGGER_MAX = 0.5    # Value when trigger is fully pressed
 
 # Button mapping for non-PWM functions
 BUTTON_MAP = {
@@ -59,8 +64,8 @@ CHANGE_THRESHOLD = 0.02   # Only send if values changed more than this
 # =============================================================================
 # STATE TRACKING
 # =============================================================================
-last_sent = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'heave': 0.0}
-smoothed = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'heave': 0.0}
+last_sent = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
+smoothed = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
 previous_buttons = [0] * controller.get_numbuttons()
 
 
@@ -70,6 +75,18 @@ def apply_deadband(value, deadband=DEADBAND):
         return 0.0
     sign = 1.0 if value > 0 else -1.0
     return sign * (abs(value) - deadband) / (1.0 - deadband)
+
+
+def normalize_trigger(raw_value):
+    """
+    Normalize trigger value from controller range to 0.0-1.0.
+    Your controller: released = -0.5, fully pressed = +0.5
+    Output: released = 0.0, fully pressed = 1.0
+    """
+    # Map from [TRIGGER_MIN, TRIGGER_MAX] to [0, 1]
+    normalized = (raw_value - TRIGGER_MIN) / (TRIGGER_MAX - TRIGGER_MIN)
+    # Clamp to valid range
+    return max(0.0, min(1.0, normalized))
 
 
 def smooth_value(key, new_value, alpha=SMOOTHING_ALPHA):
@@ -82,44 +99,46 @@ def read_axes():
     """Read and process all controller axes."""
     pygame.event.pump()
 
-    # Read raw axis values
+    # Read raw axis values for sticks
     left_x = controller.get_axis(AXIS_MAP['left_x'])
     left_y = controller.get_axis(AXIS_MAP['left_y'])
     right_x = controller.get_axis(AXIS_MAP['right_x'])
 
-    # Handle triggers - they may report -1 (released) to +1 (pressed)
-    # or 0 (released) to +1 (pressed) depending on driver
+    # Read and normalize triggers
+    # Triggers are separate: LT = descend, RT = ascend
     try:
         lt_raw = controller.get_axis(AXIS_MAP['lt'])
         rt_raw = controller.get_axis(AXIS_MAP['rt'])
 
-        # Normalize triggers from [-1, 1] to [0, 1]
-        lt = (lt_raw + 1.0) / 2.0
-        rt = (rt_raw + 1.0) / 2.0
-
-        # Heave: positive = ascend (RT), negative = descend (LT)
-        heave_raw = rt - lt
+        # Normalize triggers from [-0.5, +0.5] to [0, 1]
+        descend_raw = normalize_trigger(lt_raw)
+        ascend_raw = normalize_trigger(rt_raw)
     except (pygame.error, IndexError):
-        heave_raw = 0.0
+        descend_raw = 0.0
+        ascend_raw = 0.0
 
-    # Apply deadband to each axis
+    # Apply deadband to stick axes
     surge_raw = apply_deadband(-left_y)   # Invert Y: push up = forward = positive
     sway_raw = apply_deadband(left_x)     # Right = positive sway
     yaw_raw = apply_deadband(right_x)     # Right = positive yaw (turn right)
-    heave_raw = apply_deadband(heave_raw)
+
+    # Apply deadband to triggers (already 0-1 range)
+    descend_raw = descend_raw if descend_raw > DEADBAND else 0.0
+    ascend_raw = ascend_raw if ascend_raw > DEADBAND else 0.0
 
     # Apply smoothing
     return {
         'surge': smooth_value('surge', surge_raw),
         'sway': smooth_value('sway', sway_raw),
         'yaw': smooth_value('yaw', yaw_raw),
-        'heave': smooth_value('heave', heave_raw)
+        'descend': smooth_value('descend', descend_raw),
+        'ascend': smooth_value('ascend', ascend_raw)
     }
 
 
 def values_changed(new_vals, threshold=CHANGE_THRESHOLD):
     """Check if values changed enough to warrant sending an update."""
-    for key in ['surge', 'sway', 'yaw', 'heave']:
+    for key in ['surge', 'sway', 'yaw', 'descend', 'ascend']:
         if abs(new_vals[key] - last_sent[key]) > threshold:
             return True
     return False
@@ -177,8 +196,9 @@ def print_status(values):
     surge = values['surge']
     sway = values['sway']
     yaw = values['yaw']
-    heave = values['heave']
-    print(f"\rSurge: {surge:+.2f} | Sway: {sway:+.2f} | Yaw: {yaw:+.2f} | Heave: {heave:+.2f}  ", end='')
+    descend = values['descend']
+    ascend = values['ascend']
+    print(f"\rSurge: {surge:+.2f} | Sway: {sway:+.2f} | Yaw: {yaw:+.2f} | Desc: {descend:.2f} | Asc: {ascend:.2f}  ", end='')
 
 
 # =============================================================================
@@ -190,11 +210,12 @@ print("Controls:")
 print("  Left stick Y  : Forward / Backward (surge)")
 print("  Left stick X  : Strafe Left / Right (sway)")
 print("  Right stick X : Rotate Left / Right (yaw)")
-print("  Left trigger  : Descend")
-print("  Right trigger : Ascend")
+print("  Left trigger  : Descend (0-100%)")
+print("  Right trigger : Ascend (0-100%)")
 print("  Back button   : EMERGENCY STOP")
 print("  Start button  : Toggle LED")
 print("=" * 60)
+print(f"Trigger calibration: min={TRIGGER_MIN}, max={TRIGGER_MAX}")
 print("\nPress Ctrl+C to exit\n")
 
 try:
@@ -217,7 +238,7 @@ except KeyboardInterrupt:
     print("\n\nShutting down...")
     # Send zero command on exit to stop all motors
     try:
-        zero_cmd = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'heave': 0.0}
+        zero_cmd = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
         requests.post(f"{BASE_URL}/motor/pwm", json=zero_cmd, timeout=0.5)
         print("Motors stopped.")
     except:
