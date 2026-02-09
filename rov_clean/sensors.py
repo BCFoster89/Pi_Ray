@@ -75,16 +75,12 @@ def sensor_loop():
 
             # Read temperature from IMU
             # The SparkFun qwiic_lsm6dso library may or may not apply the +25°C offset
-            # from the LSM6DSO datasheet. We check if the value is reasonable and
-            # compare against water temp to validate.
+            # from the LSM6DSO datasheet. We check if the value is reasonable.
             temp_raw = imu.read_temp_c()
 
-            # Water temp in Celsius for comparison
-            water_temp_c = tc
-
             if temp_raw is None:
-                # No reading - use water temp as fallback
-                temp_c = water_temp_c
+                # No reading - show 0
+                temp_c = 0.0
             elif -10 <= temp_raw <= 85:
                 # Value is in reasonable range for an IC - library likely applies offset
                 temp_c = temp_raw
@@ -92,8 +88,8 @@ def sensor_loop():
                 # Value looks like it's missing the +25°C offset
                 temp_c = temp_raw + 25.0
             else:
-                # Invalid reading - use water temp as fallback
-                temp_c = water_temp_c
+                # Invalid reading - show 0
+                temp_c = 0.0
 
             # Convert to Fahrenheit for display
             itf = (temp_c * 9 / 5) + 32

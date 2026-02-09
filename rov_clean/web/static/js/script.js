@@ -335,9 +335,9 @@ function drawHUD(sensor){
   ctx.lineWidth = 1; // Reset for other drawings
   ctx.strokeStyle = "#ff0"; // Reset to yellow
 
-  // Depth display (below the artificial horizon circle)
+  // Depth display (above the artificial horizon circle)
   ctx.fillStyle = "#ff0";
   ctx.font = "bold 20px Arial";
   ctx.textAlign = "left";
-  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, 200);
+  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, 50);
 }
