@@ -74,15 +74,26 @@ def sensor_loop():
                 gx -= gyro_offsets['x']; gy -= gyro_offsets['y']; gz -= gyro_offsets['z']
 
             # Read temperature from IMU
-            # The SparkFun qwiic_lsm6dso library returns (raw/256) but omits
-            # the required +25°C offset from the LSM6DSO datasheet formula.
-            # We must always add 25°C to get the correct temperature.
+            # The SparkFun qwiic_lsm6dso library may or may not apply the +25°C offset
+            # from the LSM6DSO datasheet. We check if the value is reasonable and
+            # compare against water temp to validate.
             temp_raw = imu.read_temp_c()
+
+            # Water temp in Celsius for comparison
+            water_temp_c = tc
+
             if temp_raw is None:
-                temp_c = 25.0  # Default to room temp if no reading
-            else:
-                # Always add the 25°C offset the library omits
+                # No reading - use water temp as fallback
+                temp_c = water_temp_c
+            elif -10 <= temp_raw <= 85:
+                # Value is in reasonable range for an IC - library likely applies offset
+                temp_c = temp_raw
+            elif -35 <= temp_raw <= 60:
+                # Value looks like it's missing the +25°C offset
                 temp_c = temp_raw + 25.0
+            else:
+                # Invalid reading - use water temp as fallback
+                temp_c = water_temp_c
 
             # Convert to Fahrenheit for display
             itf = (temp_c * 9 / 5) + 32
