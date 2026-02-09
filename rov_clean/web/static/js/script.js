@@ -182,28 +182,106 @@ function drawHUD(sensor){
   let cx = canvas.width/2;
   let cy = canvas.height/2;
 
-  // Horizon with roll & pitch
+  // === ARTIFICIAL HORIZON (small circle, top-left) ===
+  const ahRadius = 50;  // 100px diameter circle
+  const ahX = 80;       // center X position
+  const ahY = 120;      // center Y position
+  const pitchScale = 2; // pixels per degree of pitch
+
   ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate((-sensor.roll || 0) * Math.PI/180);
-  let pitchOffset = (sensor.pitch || 0) * 5; // scale
-  ctx.strokeStyle = "#ff0";
+
+  // Create circular clipping region
   ctx.beginPath();
-  ctx.moveTo(-300, pitchOffset);
-  ctx.lineTo(300, pitchOffset);
+  ctx.arc(ahX, ahY, ahRadius, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Translate to circle center and apply roll rotation
+  ctx.translate(ahX, ahY);
+  ctx.rotate((-sensor.roll || 0) * Math.PI / 180);
+
+  // Calculate pitch offset
+  let pitchOffset = (sensor.pitch || 0) * pitchScale;
+
+  // Draw sky (blue) - large rectangle above horizon
+  ctx.fillStyle = "#1a4a7a";
+  ctx.fillRect(-ahRadius * 2, -ahRadius * 2 + pitchOffset, ahRadius * 4, ahRadius * 2);
+
+  // Draw ground (brown) - large rectangle below horizon
+  ctx.fillStyle = "#5a3a1a";
+  ctx.fillRect(-ahRadius * 2, pitchOffset, ahRadius * 4, ahRadius * 2);
+
+  // Draw horizon line
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-ahRadius * 2, pitchOffset);
+  ctx.lineTo(ahRadius * 2, pitchOffset);
   ctx.stroke();
 
-  // Pitch ladder
-  ctx.font = "14px Segoe UI";
-  ctx.fillStyle = "#ff0";
-  for(let p=-20;p<=20;p+=5){
-    let offset = (p - (sensor.pitch||0)) * 5;
+  // Draw pitch ladder lines (every 10 degrees)
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1;
+  ctx.font = "10px Arial";
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  for (let p = -30; p <= 30; p += 10) {
+    if (p === 0) continue; // Skip horizon line
+    let offset = pitchOffset - p * pitchScale;
+    let lineWidth = (p % 20 === 0) ? 30 : 20;
     ctx.beginPath();
-    ctx.moveTo(-40, offset);
-    ctx.lineTo(40, offset);
+    ctx.moveTo(-lineWidth / 2, offset);
+    ctx.lineTo(lineWidth / 2, offset);
     ctx.stroke();
-    ctx.fillText(p+"°", 50, offset+5);
+    if (p % 20 === 0) {
+      ctx.fillText(Math.abs(p) + "", lineWidth / 2 + 8, offset + 3);
+    }
   }
+
+  ctx.restore();
+
+  // Draw fixed aircraft reference symbol (center of circle, not rotated)
+  ctx.strokeStyle = "#fa0";
+  ctx.lineWidth = 2;
+  // Left wing
+  ctx.beginPath();
+  ctx.moveTo(ahX - 25, ahY);
+  ctx.lineTo(ahX - 10, ahY);
+  ctx.stroke();
+  // Right wing
+  ctx.beginPath();
+  ctx.moveTo(ahX + 10, ahY);
+  ctx.lineTo(ahX + 25, ahY);
+  ctx.stroke();
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(ahX, ahY, 3, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Draw circle border
+  ctx.strokeStyle = "#888";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(ahX, ahY, ahRadius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Draw roll indicator arc at top
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(ahX, ahY, ahRadius + 5, -Math.PI * 0.75, -Math.PI * 0.25);
+  ctx.stroke();
+
+  // Roll pointer (rotates with roll)
+  ctx.save();
+  ctx.translate(ahX, ahY);
+  ctx.rotate((-sensor.roll || 0) * Math.PI / 180);
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.moveTo(0, -ahRadius - 2);
+  ctx.lineTo(-4, -ahRadius - 10);
+  ctx.lineTo(4, -ahRadius - 10);
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 
 // Heading tape top-center
@@ -257,16 +335,9 @@ function drawHUD(sensor){
   ctx.lineWidth = 1; // Reset for other drawings
   ctx.strokeStyle = "#ff0"; // Reset to yellow
 
-  // Depth bottom-right
+  // Depth display (below the artificial horizon circle)
   ctx.fillStyle = "#ff0";
-  ctx.font = "bold 20px Arial"; // This sets the size to 30 pixels and makes it bold
+  ctx.font = "bold 20px Arial";
   ctx.textAlign = "left";
-  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, 40);
-  
-  // Roll & Pitch bottom-left
-  ctx.fillStyle = "#ff0";
-  ctx.font = "bold 16px Arial"; // This sets the size to 30 pixels and makes it bold
-  ctx.textAlign = "left";
-  ctx.fillText(`Pitch: ${(sensor.pitch||0).toFixed(1)}°`, 20, canvas.height-40);
-  ctx.fillText(`Roll: ${(sensor.roll||0).toFixed(1)}°`, 20, canvas.height-20);
+  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, 200);
 }
