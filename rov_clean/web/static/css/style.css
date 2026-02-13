@@ -333,3 +333,102 @@ button.active {
   color: #ff0;
   background: rgba(80, 60, 0, 0.4);
 }
+
+/* =============================================================================
+   RECORDING & CAPTURE STYLES
+   ============================================================================= */
+
+.record-btn {
+  background: #400;
+  border-color: #f00;
+}
+
+.record-btn:hover {
+  background: #600;
+}
+
+.record-btn.recording {
+  background: #f00;
+  animation: pulse-red 1s infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 5px rgba(255, 0, 0, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(255, 0, 0, 0.9); }
+}
+
+.recording-status {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #f88;
+  text-align: center;
+}
+
+/* =============================================================================
+   DEPTH HOLD STYLES
+   ============================================================================= */
+
+#depthHoldBtn {
+  background: #024;
+  border-color: #08f;
+}
+
+#depthHoldBtn:hover {
+  background: #046;
+}
+
+#depthHoldBtn.active {
+  background: #08f;
+  color: #fff;
+  animation: pulse-blue 1s infinite;
+}
+
+@keyframes pulse-blue {
+  0%, 100% { box-shadow: 0 0 5px rgba(0, 136, 255, 0.5); }
+  50% { box-shadow: 0 0 15px rgba(0, 136, 255, 0.9); }
+}
+
+.depth-hold-status {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #8cf;
+  text-align: center;
+}
+
+.pid-tuning {
+  margin-top: 8px;
+  padding: 6px;
+  background: rgba(0, 40, 80, 0.3);
+  border-radius: 4px;
+}
+
+.pid-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.pid-row label {
+  width: 25px;
+  font-size: 11px;
+  color: #8cf;
+}
+
+.pid-row input {
+  flex: 1;
+  padding: 4px;
+  font-size: 11px;
+  background: #123;
+  border: 1px solid #0ff;
+  border-radius: 3px;
+  color: #fff;
+  width: 60px;
+}
+
+.pid-tuning button {
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px;
+  font-size: 10px;
+}

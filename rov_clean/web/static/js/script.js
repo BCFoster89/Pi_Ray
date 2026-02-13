@@ -87,6 +87,177 @@ function toggleLED(){
   fetch('/toggle_led').then(r => r.text());
 }
 
+// === RECORDING FUNCTIONS ===
+let isRecording = false;
+
+async function toggleRecording() {
+  const btn = document.getElementById('recordBtn');
+  const statusEl = document.getElementById('recordingStatus');
+
+  try {
+    if (!isRecording) {
+      // Start recording
+      let r = await fetch('/recording/start', { method: 'POST' });
+      let data = await r.json();
+      if (data.success) {
+        isRecording = true;
+        btn.classList.add('recording');
+        btn.textContent = 'Stop';
+        statusEl.textContent = `Recording: ${data.filename}`;
+        // Flash screen green
+        document.body.style.boxShadow = 'inset 0 0 50px rgba(0, 255, 0, 0.3)';
+        setTimeout(() => { document.body.style.boxShadow = 'none'; }, 200);
+      }
+    } else {
+      // Stop recording
+      let r = await fetch('/recording/stop', { method: 'POST' });
+      let data = await r.json();
+      isRecording = false;
+      btn.classList.remove('recording');
+      btn.textContent = 'Record';
+      statusEl.textContent = data.filename ? `Saved: ${data.filename}` : '';
+    }
+  } catch (e) {
+    console.error("Recording error:", e);
+    statusEl.textContent = 'Error';
+  }
+}
+
+// Poll recording status to update elapsed time
+async function pollRecordingStatus() {
+  if (!isRecording) return;
+  try {
+    let r = await fetch('/recording/status', { cache: "no-store" });
+    let data = await r.json();
+    const statusEl = document.getElementById('recordingStatus');
+    if (data.recording) {
+      const mins = Math.floor(data.elapsed_seconds / 60);
+      const secs = Math.floor(data.elapsed_seconds % 60);
+      statusEl.textContent = `Recording: ${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+  } catch (e) {
+    console.error("Recording status error:", e);
+  }
+}
+setInterval(pollRecordingStatus, 1000);
+
+// === STILL CAPTURE ===
+async function captureImage() {
+  const btn = document.getElementById('captureBtn');
+  btn.disabled = true;
+  btn.textContent = 'Capturing...';
+
+  try {
+    // Flash screen white to indicate capture
+    document.body.style.boxShadow = 'inset 0 0 100px rgba(255, 255, 255, 0.8)';
+    setTimeout(() => { document.body.style.boxShadow = 'none'; }, 150);
+
+    let r = await fetch('/capture_image', { method: 'POST' });
+    let data = await r.json();
+
+    if (data.success) {
+      console.log("Image captured:", data.filename);
+      // Show notification
+      const statusEl = document.getElementById('recordingStatus');
+      statusEl.textContent = `Captured: ${data.filename}`;
+      setTimeout(() => {
+        if (statusEl.textContent.startsWith('Captured:')) {
+          statusEl.textContent = '';
+        }
+      }, 3000);
+    }
+  } catch (e) {
+    console.error("Capture error:", e);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Capture';
+}
+
+// === DEPTH HOLD FUNCTIONS ===
+let depthHoldEnabled = false;
+
+async function toggleDepthHold() {
+  const btn = document.getElementById('depthHoldBtn');
+  const statusEl = document.getElementById('depthHoldStatus');
+
+  try {
+    if (!depthHoldEnabled) {
+      // Enable depth hold
+      let r = await fetch('/depth_hold/enable', { method: 'POST' });
+      let data = await r.json();
+      if (data.success) {
+        depthHoldEnabled = true;
+        btn.classList.add('active');
+        btn.textContent = 'Release';
+        statusEl.textContent = `Holding: ${data.status.target_depth.toFixed(1)} ft`;
+      }
+    } else {
+      // Disable depth hold
+      let r = await fetch('/depth_hold/disable', { method: 'POST' });
+      depthHoldEnabled = false;
+      btn.classList.remove('active');
+      btn.textContent = 'Depth Hold';
+      statusEl.textContent = '';
+    }
+  } catch (e) {
+    console.error("Depth hold error:", e);
+    statusEl.textContent = 'Error';
+  }
+}
+
+async function updatePIDGains() {
+  const kp = parseFloat(document.getElementById('pidKp').value);
+  const ki = parseFloat(document.getElementById('pidKi').value);
+  const kd = parseFloat(document.getElementById('pidKd').value);
+
+  try {
+    let r = await fetch('/depth_hold/tune', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kp, ki, kd })
+    });
+    let data = await r.json();
+    if (data.success) {
+      console.log("PID gains updated:", data.status);
+    }
+  } catch (e) {
+    console.error("PID tune error:", e);
+  }
+}
+
+// Poll depth hold status
+async function pollDepthHoldStatus() {
+  try {
+    let r = await fetch('/depth_hold/status', { cache: "no-store" });
+    let data = await r.json();
+
+    const btn = document.getElementById('depthHoldBtn');
+    const statusEl = document.getElementById('depthHoldStatus');
+
+    // Sync state with server
+    depthHoldEnabled = data.enabled;
+
+    if (data.enabled) {
+      btn.classList.add('active');
+      btn.textContent = 'Release';
+      statusEl.textContent = `Target: ${data.target_depth.toFixed(1)} ft | Error: ${data.error.toFixed(2)} ft`;
+    } else {
+      btn.classList.remove('active');
+      btn.textContent = 'Depth Hold';
+    }
+
+    // Update PID input fields if they differ
+    document.getElementById('pidKp').value = data.kp;
+    document.getElementById('pidKi').value = data.ki;
+    document.getElementById('pidKd').value = data.kd;
+
+  } catch (e) {
+    // Silently fail - server might not support depth hold yet
+  }
+}
+setInterval(pollDepthHoldStatus, 500);
+
 // === STATUS HEARTBEAT ===
 async function heartbeatLoop(){
   let btn = document.getElementById("statusBtn");
