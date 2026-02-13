@@ -54,7 +54,7 @@ html, body {
 }
 
 #logsCard {
-  height: 250px;       /* Or whatever height fits your HUD */
+  max-height: 200px;   /* Limit height to prevent overflow */
   overflow-y: auto;    /* Enables the scrollbar */
   display: flex;
   flex-direction: column;
@@ -238,6 +238,12 @@ button.active {
   padding: 6px;
   background: rgba(0, 40, 80, 0.3);
   border-radius: 4px;
+}
+
+/* Stacked layout for vertical thrusters */
+.vertical-thrusters.stacked {
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* Ascend section - placeholder pins (not yet configured) */
