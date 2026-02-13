@@ -229,7 +229,6 @@ Based on typical underwater ROV characteristics:
 
 ## Questions/Decisions Needed
 
-1. **Video format:** H.264 (smaller) or MJPEG (simpler but larger)?
-2. **Depth hold activation:** Hold current depth on button press, or allow setting specific target?
-3. **PID tuning:** Hardcoded initial values or expose tuning UI?
-4. **Recording storage:** Local only or option to download via web?
+1. **Video format:** H.264 (MP4) - clearer video, hardware-encoded ✓
+2. **Depth hold activation:** Hold current depth on button press ✓
+3. **PID tuning:** Expose controls in UI for tuning, hardcode later once tuned ✓
