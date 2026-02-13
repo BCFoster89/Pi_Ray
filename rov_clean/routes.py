@@ -1,6 +1,6 @@
 # routes.py
-from flask import render_template, jsonify, Response, request
-import io, time
+from flask import render_template, jsonify, Response, request, send_from_directory
+import io, time, os
 import RPi.GPIO as GPIO
 
 from logger import log, log_buffer
@@ -8,7 +8,12 @@ from config import sensor_data, led_pin, motor_states, MOTOR_GROUPS, led_state, 
 from calibration import calib, cal_lock, save_calib
 from motors import motor, pwm_motor
 import sensors   # ensures sensor loop is running
-from camera_module import generate_frames
+from camera_module import (
+    generate_frames, capture_still, start_recording, stop_recording,
+    get_recording_status, list_recordings, list_images,
+    RECORDINGS_DIR, IMAGES_DIR
+)
+from depth_hold import depth_controller
 
 # This function will be called by main.py to attach routes to the Flask app.
 def init_app(app):
@@ -151,6 +156,8 @@ def init_app(app):
             "descend": 0.0,  # 0.0 to 1.0 (left trigger - descend intensity)
             "ascend": 0.0    # 0.0 to 1.0 (right trigger - ascend intensity)
         }
+
+        When depth hold is enabled, descend/ascend values are overridden by PID output.
         """
         try:
             data = request.get_json()
@@ -170,12 +177,19 @@ def init_app(app):
             descend = max(0.0, min(1.0, descend))  # 0-1 range for triggers
             ascend = max(0.0, min(1.0, ascend))    # 0-1 range for triggers
 
+            # If depth hold is enabled, override descend/ascend with PID output
+            if depth_controller.enabled:
+                pid_descend, pid_ascend = depth_controller.get_output()
+                descend = pid_descend
+                ascend = pid_ascend
+
             # Set thrust vector and get resulting duty cycles
             duties = pwm_motor.set_thrust_vector(surge, sway, yaw, descend, ascend)
 
             return jsonify({
                 "success": True,
-                "duties": {str(k): round(v, 3) for k, v in duties.items()}
+                "duties": {str(k): round(v, 3) for k, v in duties.items()},
+                "depth_hold_active": depth_controller.enabled
             })
 
         except Exception as e:
@@ -203,4 +217,129 @@ def init_app(app):
     def video_feed():
         return Response(generate_frames(),
                         mimetype='multipart/x-mixed-replace; boundary=frame')
+
+    # ==========================================================================
+    # STILL IMAGE CAPTURE
+    # ==========================================================================
+
+    @app.route("/capture_image", methods=["POST"])
+    def capture_image():
+        """Capture a high-resolution still image."""
+        try:
+            filename = capture_still()
+            if filename:
+                return jsonify({"success": True, "filename": filename})
+            else:
+                return jsonify({"success": False, "error": "Capture failed"}), 500
+        except Exception as e:
+            log(f"[CAM] Capture error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/images/<filename>")
+    def serve_image(filename):
+        """Serve a captured image file."""
+        return send_from_directory(IMAGES_DIR, filename)
+
+    @app.route("/images")
+    def list_images_route():
+        """List all captured images."""
+        return jsonify({"images": list_images()})
+
+    # ==========================================================================
+    # VIDEO RECORDING
+    # ==========================================================================
+
+    @app.route("/recording/start", methods=["POST"])
+    def recording_start():
+        """Start video recording."""
+        try:
+            filename = start_recording()
+            if filename:
+                return jsonify({"success": True, "filename": filename})
+            else:
+                return jsonify({"success": False, "error": "Failed to start recording"}), 500
+        except Exception as e:
+            log(f"[CAM] Recording start error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/recording/stop", methods=["POST"])
+    def recording_stop():
+        """Stop video recording."""
+        try:
+            filename = stop_recording()
+            if filename:
+                return jsonify({"success": True, "filename": filename})
+            else:
+                return jsonify({"success": False, "error": "No recording in progress"}), 400
+        except Exception as e:
+            log(f"[CAM] Recording stop error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/recording/status")
+    def recording_status():
+        """Get current recording status."""
+        return jsonify(get_recording_status())
+
+    @app.route("/recordings/<filename>")
+    def serve_recording(filename):
+        """Serve a recorded video file."""
+        return send_from_directory(RECORDINGS_DIR, filename)
+
+    @app.route("/recordings")
+    def list_recordings_route():
+        """List all recorded videos."""
+        return jsonify({"recordings": list_recordings()})
+
+    # ==========================================================================
+    # DEPTH HOLD PID CONTROL
+    # ==========================================================================
+
+    @app.route("/depth_hold/enable", methods=["POST"])
+    def depth_hold_enable():
+        """Enable depth hold at current depth."""
+        try:
+            depth_controller.enable()
+            status = depth_controller.get_status()
+            return jsonify({"success": True, "status": status})
+        except Exception as e:
+            log(f"[DEPTH] Enable error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/depth_hold/disable", methods=["POST"])
+    def depth_hold_disable():
+        """Disable depth hold."""
+        try:
+            depth_controller.disable()
+            return jsonify({"success": True})
+        except Exception as e:
+            log(f"[DEPTH] Disable error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/depth_hold/status")
+    def depth_hold_status():
+        """Get depth hold controller status."""
+        return jsonify(depth_controller.get_status())
+
+    @app.route("/depth_hold/tune", methods=["POST"])
+    def depth_hold_tune():
+        """Adjust PID gains."""
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "No JSON data received"}), 400
+
+            kp = data.get('kp')
+            ki = data.get('ki')
+            kd = data.get('kd')
+
+            depth_controller.set_gains(
+                kp=float(kp) if kp is not None else None,
+                ki=float(ki) if ki is not None else None,
+                kd=float(kd) if kd is not None else None
+            )
+
+            return jsonify({"success": True, "status": depth_controller.get_status()})
+        except Exception as e:
+            log(f"[DEPTH] Tune error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
 
