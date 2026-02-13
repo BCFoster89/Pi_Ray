@@ -357,7 +357,7 @@ function drawHUD(sensor){
   const ahRadius = 50;  // 100px diameter circle
   const ahX = 80;       // center X position
   const ahY = 120;      // center Y position
-  const pitchScale = 2; // pixels per degree of pitch
+  const pitchScale = 8; // pixels per degree of pitch (increased for sensitivity)
 
   ctx.save();
 
@@ -389,22 +389,23 @@ function drawHUD(sensor){
   ctx.lineTo(ahRadius * 2, pitchOffset);
   ctx.stroke();
 
-  // Draw pitch ladder lines (every 10 degrees)
+  // Draw pitch ladder lines (every 2 degrees)
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 1;
-  ctx.font = "10px Arial";
+  ctx.font = "8px Arial";
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
-  for (let p = -30; p <= 30; p += 10) {
+  for (let p = -10; p <= 10; p += 2) {
     if (p === 0) continue; // Skip horizon line
     let offset = pitchOffset - p * pitchScale;
-    let lineWidth = (p % 20 === 0) ? 30 : 20;
+    let lineWidth = (p % 4 === 0) ? 24 : 12; // Longer lines every 4 degrees
     ctx.beginPath();
     ctx.moveTo(-lineWidth / 2, offset);
     ctx.lineTo(lineWidth / 2, offset);
     ctx.stroke();
-    if (p % 20 === 0) {
-      ctx.fillText(Math.abs(p) + "", lineWidth / 2 + 8, offset + 3);
+    // Label every 4 degrees
+    if (p % 4 === 0) {
+      ctx.fillText(Math.abs(p) + "", lineWidth / 2 + 6, offset + 3);
     }
   }
 
@@ -435,22 +436,31 @@ function drawHUD(sensor){
   ctx.arc(ahX, ahY, ahRadius, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Draw roll indicator arc at top
+  // Draw roll indicator tick marks (every 2 degrees, from -10 to +10)
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(ahX, ahY, ahRadius + 5, -Math.PI * 0.75, -Math.PI * 0.25);
-  ctx.stroke();
+  for (let r = -10; r <= 10; r += 2) {
+    ctx.save();
+    ctx.translate(ahX, ahY);
+    ctx.rotate(r * Math.PI / 180);
+    // Draw tick mark at top of circle
+    let tickLen = (r % 4 === 0) ? 8 : 4; // Longer ticks every 4 degrees
+    ctx.beginPath();
+    ctx.moveTo(0, -ahRadius - 2);
+    ctx.lineTo(0, -ahRadius - 2 - tickLen);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // Roll pointer (rotates with roll)
   ctx.save();
   ctx.translate(ahX, ahY);
   ctx.rotate((-sensor.roll || 0) * Math.PI / 180);
-  ctx.fillStyle = "#fff";
+  ctx.fillStyle = "#fa0";
   ctx.beginPath();
   ctx.moveTo(0, -ahRadius - 2);
-  ctx.lineTo(-4, -ahRadius - 10);
-  ctx.lineTo(4, -ahRadius - 10);
+  ctx.lineTo(-3, -ahRadius - 8);
+  ctx.lineTo(3, -ahRadius - 8);
   ctx.closePath();
   ctx.fill();
   ctx.restore();

@@ -12,11 +12,20 @@
     <canvas id="overlay"></canvas>
   </div>
 
-  <!-- Floating Controls -->
-  <div id="controls">
+  <!-- Left Side Controls (under artificial horizon) -->
+  <div id="controls-left">
+    <div class="card hud-card" id="statusCard">
+      <h3>Status</h3>
+      <button id="statusBtn">Pi Status: UNKNOWN</button>
+    </div>
+
+    <div class="card hud-card" id="telemetryCard">
+      <h3>Telemetry</h3>
+      <pre id="telemetry"></pre>
+    </div>
+
     <div class="card hud-card">
       <h3>Thrusters</h3>
-      <!-- Visual ROV thruster diagram -->
       <div class="thruster-display">
         <div class="rov-diagram">
           <div class="thruster-row">
@@ -45,7 +54,6 @@
             </div>
           </div>
         </div>
-        <!-- Vertical thrust controls (stacked) -->
         <div class="vertical-thrusters stacked">
           <div class="thruster vertical" id="thruster-descend">
             <span class="thruster-label">Descend</span>
@@ -59,12 +67,17 @@
           </div>
         </div>
       </div>
-      <!-- Emergency stop -->
-      <button class="emergency-stop" onclick="emergencyStop()">ALL STOP</button>
-      <!-- Control mode indicator -->
       <div class="control-mode" id="control-mode">Mode: Manual</div>
     </div>
 
+    <div class="card hud-card" id="logsCard">
+      <h3>Logs</h3>
+      <pre id="logs"></pre>
+    </div>
+  </div>
+
+  <!-- Right Side Controls -->
+  <div id="controls-right">
     <div class="card hud-card">
       <h3>Recording</h3>
       <div class="button-grid">
@@ -107,20 +120,7 @@
       </div>
     </div>
 
-    <div class="card hud-card" id="statusCard">
-      <h3>Status</h3>
-      <button id="statusBtn">Pi Status: UNKNOWN</button>
-    </div>
-
-    <div class="card hud-card" id="telemetryCard">
-      <h3>Telemetry</h3>
-      <pre id="telemetry"></pre>
-    </div>
-
-    <div class="card hud-card" id="logsCard">
-      <h3>Logs</h3>
-      <pre id="logs"></pre>
-    </div>
+    <button class="emergency-stop" onclick="emergencyStop()">ALL STOP</button>
   </div>
 
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>
