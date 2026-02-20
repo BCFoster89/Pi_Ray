@@ -267,6 +267,13 @@ def stop_recording():
             if picam2 is not None and encoder is not None:
                 picam2.stop_encoder()
 
+            # Close the output to ensure ffmpeg finalizes the file
+            if output is not None:
+                try:
+                    output.close()
+                except Exception:
+                    pass  # May already be closed
+
             filename = current_recording_file
             filepath = os.path.join(RECORDINGS_DIR, filename) if filename else None
             duration = time.time() - recording_start_time if recording_start_time else 0

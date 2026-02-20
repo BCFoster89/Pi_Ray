@@ -446,16 +446,16 @@ function drawHUD(sensor){
   ctx.arc(ahX, ahY, ahRadius, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Draw roll indicator tick marks (every 10 degrees, from -30 to +30)
+  // Draw roll indicator tick marks (scaled 3x - 10° of roll shows at 30° visual position)
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 1;
   ctx.font = "9px Arial";
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
-  for (let r = -30; r <= 30; r += 10) {
+  for (let r = -10; r <= 10; r += 10) {
     ctx.save();
     ctx.translate(ahX, ahY);
-    ctx.rotate(r * Math.PI / 180);
+    ctx.rotate((r * 3) * Math.PI / 180);  // 3x scale: 10° displays at 30° position
     // Draw tick mark at top of circle
     let tickLen = (r === 0) ? 10 : 6;
     ctx.beginPath();
@@ -464,15 +464,15 @@ function drawHUD(sensor){
     ctx.stroke();
     // Add degree labels for non-zero ticks
     if (r !== 0) {
-      ctx.fillText(Math.abs(r) + "", 0, -ahRadius - 14);
+      ctx.fillText(Math.abs(r) + "°", 0, -ahRadius - 14);
     }
     ctx.restore();
   }
 
-  // Roll pointer (rotates with roll)
+  // Roll pointer (rotates with roll, 3x visual scale to match tick marks)
   ctx.save();
   ctx.translate(ahX, ahY);
-  ctx.rotate((-sensor.roll || 0) * Math.PI / 180);
+  ctx.rotate(((-sensor.roll || 0) * 3) * Math.PI / 180);  // 3x scale
   ctx.fillStyle = "#fa0";
   ctx.beginPath();
   ctx.moveTo(0, -ahRadius - 2);
