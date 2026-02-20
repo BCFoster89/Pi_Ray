@@ -452,18 +452,18 @@ function drawHUD(sensor){
   ctx.font = "9px Arial";
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
-  for (let r = -10; r <= 10; r += 10) {
+  for (let r = -10; r <= 10; r += 5) {  // Every 5 degrees
     ctx.save();
     ctx.translate(ahX, ahY);
     ctx.rotate((r * 3) * Math.PI / 180);  // 3x scale: 10° displays at 30° position
-    // Draw tick mark at top of circle
-    let tickLen = (r === 0) ? 10 : 6;
+    // Draw tick mark at top of circle (longer for 0° and 10°, shorter for 5°)
+    let tickLen = (r === 0) ? 10 : (r % 10 === 0) ? 8 : 5;
     ctx.beginPath();
     ctx.moveTo(0, -ahRadius - 2);
     ctx.lineTo(0, -ahRadius - 2 - tickLen);
     ctx.stroke();
-    // Add degree labels for non-zero ticks
-    if (r !== 0) {
+    // Add degree labels only for ±10° ticks
+    if (r !== 0 && r % 10 === 0) {
       ctx.fillText(Math.abs(r) + "°", 0, -ahRadius - 14);
     }
     ctx.restore();

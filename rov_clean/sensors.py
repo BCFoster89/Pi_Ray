@@ -3,6 +3,9 @@ import time, math, threading
 from collections import deque
 import adafruit_lps28, board, qwiic_lsm6dso
 import RPi.GPIO as GPIO
+# Ensure GPIO mode is set before sensor thread starts
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
 from logger import log
 from config import sensor_data, leak_pin
 from calibration import calib, cal_lock
