@@ -16,7 +16,10 @@
   <div id="controls-left">
     <div class="card hud-card" id="statusCard">
       <h3>Status</h3>
-      <button id="statusBtn">Pi Status: UNKNOWN</button>
+      <div class="status-row">
+        <button id="statusBtn">Pi: UNKNOWN</button>
+        <button id="leakBtn" class="leak-ok">HULL: OK</button>
+      </div>
     </div>
 
     <div class="card hud-card" id="telemetryCard">
@@ -24,6 +27,14 @@
       <pre id="telemetry"></pre>
     </div>
 
+    <div class="card hud-card" id="logsCard">
+      <h3>Logs</h3>
+      <pre id="logs"></pre>
+    </div>
+  </div>
+
+  <!-- Right Side Controls -->
+  <div id="controls-right">
     <div class="card hud-card">
       <h3>Thrusters</h3>
       <div class="thruster-display">
@@ -70,14 +81,6 @@
       <div class="control-mode" id="control-mode">Mode: Manual</div>
     </div>
 
-    <div class="card hud-card" id="logsCard">
-      <h3>Logs</h3>
-      <pre id="logs"></pre>
-    </div>
-  </div>
-
-  <!-- Right Side Controls -->
-  <div id="controls-right">
     <div class="card hud-card">
       <h3>Recording</h3>
       <div class="button-grid">

@@ -310,9 +310,19 @@ telemetryEl.textContent = displayOrder
   })
   .join('\n');
 
-    //below repalced with above
-    //document.getElementById("telemetry").textContent =
-      //JSON.stringify(sensor, null, 2);
+    // Update leak indicator
+    const leakBtn = document.getElementById('leakBtn');
+    if (leakBtn) {
+      if (sensor.leak_detected) {
+        leakBtn.textContent = 'LEAK!';
+        leakBtn.classList.remove('leak-ok');
+        leakBtn.classList.add('leak-detected');
+      } else {
+        leakBtn.textContent = 'HULL: OK';
+        leakBtn.classList.remove('leak-detected');
+        leakBtn.classList.add('leak-ok');
+      }
+    }
 
   } catch (e) {
     console.warn("Telemetry fetch failed", e);

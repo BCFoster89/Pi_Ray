@@ -142,10 +142,16 @@ button.active {
   box-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
 }
 
-/* Slightly smaller active/status button styling */
+/* Status row with Pi status and leak indicator */
+.status-row {
+  display: flex;
+  gap: 6px;
+}
+
 #statusBtn {
-  font-size: 12px;
-  padding: 6px 8px;
+  flex: 1;
+  font-size: 11px;
+  padding: 6px 6px;
   background-color: #2ecc71;
   color: white;
   border: none;
@@ -154,6 +160,33 @@ button.active {
 }
 
 #statusBtn.lost { background: #a00; }
+
+/* Leak sensor indicator */
+#leakBtn {
+  flex: 1;
+  font-size: 11px;
+  padding: 6px 6px;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: default;
+}
+
+#leakBtn.leak-ok {
+  background-color: #2ecc71;
+  box-shadow: 0 0 6px rgba(46, 204, 113, 0.8);
+}
+
+#leakBtn.leak-detected {
+  background-color: #e74c3c;
+  animation: pulse-leak 0.5s infinite;
+  box-shadow: 0 0 15px rgba(231, 76, 60, 0.9);
+}
+
+@keyframes pulse-leak {
+  0%, 100% { background-color: #e74c3c; }
+  50% { background-color: #c0392b; }
+}
 
 /* Responsive: even narrower on small screens */
 @media (max-width: 800px) {
