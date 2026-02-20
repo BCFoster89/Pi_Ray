@@ -363,10 +363,10 @@ function drawHUD(sensor){
   let cx = canvas.width/2;
   let cy = canvas.height/2;
 
-  // === ARTIFICIAL HORIZON (small circle, top-left) ===
-  const ahRadius = 50;  // 100px diameter circle
-  const ahX = 80;       // center X position
-  const ahY = 120;      // center Y position
+  // === ARTIFICIAL HORIZON (top-left) ===
+  const ahRadius = 70;  // 140px diameter circle
+  const ahX = 90;       // center X position
+  const ahY = 150;      // center Y position (below depth indicator)
   const pitchScale = 8; // pixels per degree of pitch (increased for sensitivity)
 
   ctx.save();
