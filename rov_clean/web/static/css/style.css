@@ -36,21 +36,37 @@ html, body {
 }
 
 /* Compact right-hand overlay */
-#controls {
+#controls-right {
   position: absolute;
   top: 10px;
-  right: 25px;        /* increased from 10px for better visibility */
+  right: 25px;
   z-index: 3;
 
-  /* narrow column */
-  width: 220px;       /* main width for desktop */
-  max-width: 28vw;    /* responsive cap - slightly reduced */
+  width: 200px;
+  max-width: 25vw;
 
   display: flex;
   flex-direction: column;
-  gap: 8px;           /* smaller gaps between cards */
+  gap: 8px;
 
-  align-items: flex-end; /* keep cards flush to the right edge */
+  align-items: flex-end;
+}
+
+/* Left-hand controls (under artificial horizon) */
+#controls-left {
+  position: absolute;
+  top: 200px;  /* Below the artificial horizon */
+  left: 15px;
+  z-index: 3;
+
+  width: 200px;
+  max-width: 25vw;
+
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  align-items: flex-start;
 }
 
 #logsCard {
@@ -126,10 +142,16 @@ button.active {
   box-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
 }
 
-/* Slightly smaller active/status button styling */
+/* Status row with Pi status and leak indicator */
+.status-row {
+  display: flex;
+  gap: 6px;
+}
+
 #statusBtn {
-  font-size: 12px;
-  padding: 6px 8px;
+  flex: 1;
+  font-size: 11px;
+  padding: 6px 6px;
   background-color: #2ecc71;
   color: white;
   border: none;
@@ -139,9 +161,37 @@ button.active {
 
 #statusBtn.lost { background: #a00; }
 
+/* Leak sensor indicator */
+#leakBtn {
+  flex: 1;
+  font-size: 11px;
+  padding: 6px 6px;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: default;
+}
+
+#leakBtn.leak-ok {
+  background-color: #2ecc71;
+  box-shadow: 0 0 6px rgba(46, 204, 113, 0.8);
+}
+
+#leakBtn.leak-detected {
+  background-color: #e74c3c;
+  animation: pulse-leak 0.5s infinite;
+  box-shadow: 0 0 15px rgba(231, 76, 60, 0.9);
+}
+
+@keyframes pulse-leak {
+  0%, 100% { background-color: #e74c3c; }
+  50% { background-color: #c0392b; }
+}
+
 /* Responsive: even narrower on small screens */
 @media (max-width: 800px) {
-  #controls { width: 160px; gap: 6px; right: 6px; top: 6px; }
+  #controls-right { width: 150px; gap: 6px; right: 6px; top: 6px; }
+  #controls-left { width: 150px; gap: 4px; left: 6px; top: 180px; }
   .button-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 5px; }
   button { font-size: 11px; padding: 5px 5px; }
   .card { padding: 6px; font-size: 12px; }

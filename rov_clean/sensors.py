@@ -2,9 +2,13 @@
 import time, math, threading
 from collections import deque
 import adafruit_lps28, board, qwiic_lsm6dso
+import RPi.GPIO as GPIO
 from logger import log
-from config import sensor_data
+from config import sensor_data, leak_pin
 from calibration import calib, cal_lock
+
+# Track leak state for logging
+_last_leak_state = False
 
 # Shared/internal state
 pressure_buf = deque(maxlen=5)
@@ -114,6 +118,13 @@ def sensor_loop():
 
             yaw_display = (yaw_f - yo + 180) % 360 - 180
 
+            # Check leak sensor (active LOW - LOW means water detected)
+            global _last_leak_state
+            leak_detected = GPIO.input(leak_pin) == GPIO.LOW
+            if leak_detected and not _last_leak_state:
+                log("[WARNING] LEAK DETECTED!")
+            _last_leak_state = leak_detected
+
             # Update shared dict
             sensor_data.update({
                 'pressure_inhg': round(med, 2),
@@ -124,7 +135,8 @@ def sensor_loop():
                 'imu_temp_f': round(itf, 1),
                 'roll': round(roll_f - ro, 1),
                 'pitch': round(pitch_f - po, 1),
-                'yaw': round(yaw_display, 1)
+                'yaw': round(yaw_display, 1),
+                'leak_detected': leak_detected
             })
         except Exception as e:
             log(f"[SENSOR] error: {e}")

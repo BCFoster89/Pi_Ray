@@ -12,6 +12,9 @@ motor_pins = horizontal_pins + descend_pins + ascend_pins
 led_pin = 24
 led_state = False
 
+# Leak sensor
+leak_pin = 25
+
 # Legacy motor groups (kept for backward compatibility with toggle mode)
 MOTOR_GROUPS = {
     'x': [12, 13],
@@ -98,7 +101,8 @@ sensor_data = {
     'pressure_inhg': 0.0, 'temperature_f': 0.0, 'depth_ft': 0.0,
     'accel_x': 0.0, 'accel_y': 0.0, 'accel_z': 0.0,
     'gyro_x': 0.0, 'gyro_y': 0.0, 'gyro_z': 0.0,
-    'imu_temp_f': 0.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0
+    'imu_temp_f': 0.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+    'leak_detected': False
 }
 
 # GPIO setup (run at import)
@@ -106,6 +110,8 @@ GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(led_pin, GPIO.OUT)
 GPIO.output(led_pin, GPIO.LOW)
+# Leak sensor - input with pull-up (active LOW when wet)
+GPIO.setup(leak_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 # Only setup pins that exist on the Pi (skip placeholder pins 1, 2)
 for p in horizontal_pins + descend_pins:
     GPIO.setup(p, GPIO.OUT)
