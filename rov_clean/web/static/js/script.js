@@ -446,19 +446,26 @@ function drawHUD(sensor){
   ctx.arc(ahX, ahY, ahRadius, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Draw roll indicator tick marks (every 2 degrees, from -10 to +10)
+  // Draw roll indicator tick marks (every 10 degrees, from -30 to +30)
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 1;
-  for (let r = -10; r <= 10; r += 2) {
+  ctx.font = "9px Arial";
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  for (let r = -30; r <= 30; r += 10) {
     ctx.save();
     ctx.translate(ahX, ahY);
     ctx.rotate(r * Math.PI / 180);
     // Draw tick mark at top of circle
-    let tickLen = (r % 4 === 0) ? 8 : 4; // Longer ticks every 4 degrees
+    let tickLen = (r === 0) ? 10 : 6;
     ctx.beginPath();
     ctx.moveTo(0, -ahRadius - 2);
     ctx.lineTo(0, -ahRadius - 2 - tickLen);
     ctx.stroke();
+    // Add degree labels for non-zero ticks
+    if (r !== 0) {
+      ctx.fillText(Math.abs(r) + "", 0, -ahRadius - 14);
+    }
     ctx.restore();
   }
 

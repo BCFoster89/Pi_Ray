@@ -277,6 +277,15 @@ def stop_recording():
             encoder = None
             output = None
 
+            # Give ffmpeg time to finalize the file
+            time.sleep(0.5)
+
+            # Verify file was saved (retry a few times as ffmpeg may still be writing)
+            for attempt in range(5):
+                if filepath and os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                    break
+                time.sleep(0.3)
+
             # Verify file was saved
             if filepath and os.path.exists(filepath):
                 file_size = os.path.getsize(filepath)

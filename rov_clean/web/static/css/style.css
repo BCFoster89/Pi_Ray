@@ -55,7 +55,7 @@ html, body {
 /* Left-hand controls (under artificial horizon) */
 #controls-left {
   position: absolute;
-  top: 200px;  /* Below the artificial horizon */
+  top: 260px;  /* Below the artificial horizon (ahY=150 + ahRadius=70 + padding) */
   left: 15px;
   z-index: 3;
 
@@ -191,7 +191,7 @@ button.active {
 /* Responsive: even narrower on small screens */
 @media (max-width: 800px) {
   #controls-right { width: 150px; gap: 6px; right: 6px; top: 6px; }
-  #controls-left { width: 150px; gap: 4px; left: 6px; top: 180px; }
+  #controls-left { width: 150px; gap: 4px; left: 6px; top: 240px; }
   .button-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 5px; }
   button { font-size: 11px; padding: 5px 5px; }
   .card { padding: 6px; font-size: 12px; }
