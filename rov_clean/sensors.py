@@ -17,6 +17,10 @@ _leak_emergency_triggered = False
 # Lock for protecting sensor integration variables
 sensor_lock = threading.Lock()
 
+# Thread supervision
+_sensor_thread = None
+_supervisor_running = True
+
 # Shared/internal state
 pressure_buf = deque(maxlen=5)
 roll_f = pitch_f = yaw_f = 0.0
@@ -218,5 +222,37 @@ def sensor_loop():
 
         time.sleep(0.05)
 
-# Start thread at import
-threading.Thread(target=sensor_loop, daemon=True).start()
+def _start_sensor_thread():
+    """Start the sensor loop thread."""
+    global _sensor_thread
+    _sensor_thread = threading.Thread(target=sensor_loop, daemon=True, name="SensorThread")
+    _sensor_thread.start()
+    log("[SUPERVISOR] Sensor thread started")
+
+def _supervisor_loop():
+    """Monitor sensor thread and restart if it dies."""
+    global _sensor_thread
+    restart_count = 0
+    max_restarts = 10  # Limit restarts to prevent infinite loop on persistent errors
+
+    while _supervisor_running:
+        try:
+            if _sensor_thread is None or not _sensor_thread.is_alive():
+                if restart_count < max_restarts:
+                    restart_count += 1
+                    log(f"[SUPERVISOR] Sensor thread died, restarting (attempt {restart_count}/{max_restarts})...")
+                    _start_sensor_thread()
+                elif restart_count == max_restarts:
+                    restart_count += 1  # Only log once
+                    log("[SUPERVISOR] CRITICAL: Max sensor restarts reached, giving up")
+            else:
+                # Thread is healthy, reset restart counter gradually
+                if restart_count > 0:
+                    restart_count = max(0, restart_count - 1)
+        except Exception as e:
+            log(f"[SUPERVISOR] Error: {e}")
+        time.sleep(2)  # Check every 2 seconds
+
+# Start sensor thread and supervisor at import
+_start_sensor_thread()
+threading.Thread(target=_supervisor_loop, daemon=True, name="SensorSupervisor").start()

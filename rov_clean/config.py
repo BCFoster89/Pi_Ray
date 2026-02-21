@@ -41,7 +41,7 @@ PWM_CONFIG = {
     'frequency': 200,       # PWM frequency in Hz
     'deadband': 0.05,       # Ignore inputs below 5%
     'ramp_rate': 0.15,      # Max duty cycle change per update (prevents voltage spikes)
-    'stagger_delay': 0.05,  # Delay between motor updates to prevent inrush current
+    'stagger_delay': 0.02,  # Delay between motor updates (20ms - reduced for responsiveness)
     'watchdog_timeout': 0.5 # Stop motors if no command received in 500ms
 }
 

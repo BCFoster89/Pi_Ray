@@ -313,6 +313,12 @@ class PWMMotorController:
 
     def cleanup(self):
         """Clean up PWM devices."""
+        # Stop watchdog thread FIRST to prevent deadlock
+        self._watchdog_running = False
+        if self._watchdog_thread and self._watchdog_thread.is_alive():
+            self._watchdog_thread.join(timeout=0.5)
+            log("[PWM] Watchdog thread stopped")
+
         with self.lock:
             for pin, device in self.pwm_devices.items():
                 try:

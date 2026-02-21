@@ -33,9 +33,9 @@ if FFMPEG_AVAILABLE:
 else:
     log("[CAM] WARNING: ffmpeg not found - install with: sudo apt install ffmpeg")
 
-# Video resolution - 1080p
+# Video resolution - 1080p (optimized for Pi3)
 VIDEO_SIZE = (1920, 1080)
-VIDEO_BITRATE = 15000000  # 15 Mbps for 1080p
+VIDEO_BITRATE = 8000000  # 8 Mbps - sustainable on Pi3 without thermal throttling
 
 def init_camera():
     """Initialize the Picamera2 instance lazily and return it."""
@@ -169,72 +169,43 @@ def add_telemetry_overlay(filepath):
 def capture_still():
     """
     Capture a high-resolution still image with telemetry overlay.
+    Uses current video stream frame to avoid blocking video.
     Returns the filename of the saved image.
     """
     global picam2
 
+    # Generate filename outside lock
+    depth = sensor_data.get('depth_ft', 0.0)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"ROV_{timestamp}_depth-{depth:.1f}ft.jpg"
+    filepath = os.path.join(IMAGES_DIR, filename)
+
+    # Quick capture from current stream (minimal lock time)
     with camera_lock:
+        if picam2 is None:
+            log("[CAM] Camera not initialized for still capture")
+            return None
         try:
-            # Get current depth for filename
-            depth = sensor_data.get('depth_ft', 0.0)
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            filename = f"ROV_{timestamp}_depth-{depth:.1f}ft.jpg"
-            filepath = os.path.join(IMAGES_DIR, filename)
-
-            # Stop current camera config
-            if picam2 is not None:
-                picam2.stop()
-
-                # Configure for max resolution still capture
-                # Pi Camera Module v3 max: 4608 x 2592
-                still_config = picam2.create_still_configuration(
-                    main={"size": (4608, 2592)},
-                )
-                picam2.configure(still_config)
-                picam2.start()
-                time.sleep(0.5)  # Allow camera to adjust
-
-                # Capture the image
-                picam2.capture_file(filepath)
-                log(f"[CAM] Still captured: {filename}")
-
-                # Add telemetry overlay
-                add_telemetry_overlay(filepath)
-
-                # Reconfigure back to video mode
-                picam2.stop()
-                vc = picam2.create_video_configuration(
-                    main={"size": VIDEO_SIZE},
-                    controls={"FrameRate": 30}
-                )
-                picam2.configure(vc)
-                picam2.start()
-                # Re-enable autofocus
-                try:
-                    picam2.set_controls({"AfMode": 2, "AfSpeed": 1})
-                except:
-                    pass
-
-                return filename
-            else:
-                log("[CAM] Camera not initialized for still capture")
-                return None
-
+            # Capture from current video stream - no reconfiguration needed
+            # This gives 1920x1080 instead of full 4608x2592 but doesn't block
+            frame_array = picam2.capture_array()
         except Exception as e:
             log(f"[CAM] Still capture error: {e}")
-            # Try to recover video mode
-            try:
-                if picam2 is not None:
-                    picam2.stop()
-                    vc = picam2.create_video_configuration(
-                        main={"size": VIDEO_SIZE},
-                        controls={"FrameRate": 30}
-                    )
-                    picam2.configure(vc)
-                    picam2.start()
-            except:
-                pass
             return None
+
+    # All processing OUTSIDE lock to not block video stream
+    try:
+        img = Image.fromarray(frame_array)
+        img.save(filepath, 'JPEG', quality=95)
+        log(f"[CAM] Still captured: {filename}")
+
+        # Add telemetry overlay (also outside lock)
+        add_telemetry_overlay(filepath)
+        return filename
+
+    except Exception as e:
+        log(f"[CAM] Still save error: {e}")
+        return None
 
 def start_recording():
     """
