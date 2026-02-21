@@ -63,21 +63,46 @@ def init_camera():
     return picam2
 
 def generate_frames():
-    """Generator that yields JPEG frames from the Picamera2."""
+    """Generator that yields JPEG frames from the Picamera2.
+
+    Uses capture_array() for better performance instead of capture_file().
+    Target: 30 FPS streaming.
+    """
     cam = init_camera()
-    stream = io.BytesIO()
+
+    # Track frame timing for performance monitoring
+    last_frame_time = time.time()
+    frame_count = 0
+    fps_log_interval = 100  # Log FPS every 100 frames
+
     while True:
         try:
-            cam.capture_file(stream, format="jpeg")
-            stream.seek(0)
-            frame = stream.read()
-            stream.seek(0)
-            stream.truncate()
+            # Use capture_array for faster frame capture (no disk I/O)
+            frame_array = cam.capture_array()
+
+            # Convert numpy array to JPEG bytes using PIL (faster than file I/O)
+            img = Image.fromarray(frame_array)
+
+            # Encode to JPEG with reasonable quality (lower = faster, smaller)
+            stream = io.BytesIO()
+            img.save(stream, format='JPEG', quality=80)
+            frame = stream.getvalue()
+
             yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-            time.sleep(1 / 30)
+
+            # Track FPS
+            frame_count += 1
+            if frame_count >= fps_log_interval:
+                elapsed = time.time() - last_frame_time
+                fps = frame_count / elapsed if elapsed > 0 else 0
+                if fps < 20:  # Only log if FPS is low
+                    log(f"[CAM] Stream FPS: {fps:.1f}")
+                last_frame_time = time.time()
+                frame_count = 0
+
         except Exception as e:
             log(f"[CAM] capture error: {e}")
-            time.sleep(1)
+            time.sleep(0.5)  # Brief pause on error before retry
 
 def add_telemetry_overlay(filepath):
     """Add telemetry text overlay to a captured image using Pillow."""
@@ -259,6 +284,7 @@ def stop_recording():
     """
     global recording, recording_start_time, current_recording_file, encoder, output, picam2
 
+    # Capture state variables before releasing lock
     with camera_lock:
         if not recording:
             return None
@@ -268,6 +294,7 @@ def stop_recording():
                 picam2.stop_encoder()
 
             # Close the output to ensure ffmpeg finalizes the file
+            # This should block until ffmpeg completes
             if output is not None:
                 try:
                     output.close()
@@ -284,28 +311,33 @@ def stop_recording():
             encoder = None
             output = None
 
-            # Give ffmpeg time to finalize the file
-            time.sleep(0.5)
-
-            # Verify file was saved (retry a few times as ffmpeg may still be writing)
-            for attempt in range(5):
-                if filepath and os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-                    break
-                time.sleep(0.3)
-
-            # Verify file was saved
-            if filepath and os.path.exists(filepath):
-                file_size = os.path.getsize(filepath)
-                log(f"[CAM] Recording stopped: {filename} ({duration:.1f}s, {file_size/1024/1024:.1f}MB)")
-            else:
-                log(f"[CAM] WARNING: Recording file not found after stop: {filename}")
-
-            return filename
-
         except Exception as e:
-            log(f"[CAM] Failed to stop recording: {e}")
+            log(f"[CAM] Error during stop_encoder: {e}")
             recording = False
+            recording_start_time = None
+            current_recording_file = None
+            encoder = None
+            output = None
             return None
+
+    # File verification OUTSIDE lock to prevent blocking other operations
+    # Brief wait for filesystem to sync
+    time.sleep(0.2)
+
+    # Quick verification (3 attempts, 200ms each = 600ms max)
+    for attempt in range(3):
+        if filepath and os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+            break
+        time.sleep(0.2)
+
+    # Log result
+    if filepath and os.path.exists(filepath):
+        file_size = os.path.getsize(filepath)
+        log(f"[CAM] Recording stopped: {filename} ({duration:.1f}s, {file_size/1024/1024:.1f}MB)")
+    else:
+        log(f"[CAM] WARNING: Recording file not found after stop: {filename}")
+
+    return filename
 
 def get_recording_status():
     """Return current recording status (thread-safe)."""
