@@ -1,7 +1,44 @@
+// === NETWORK UTILITIES ===
+// Track network status for UI feedback
+let networkOnline = true;
+let lastNetworkError = 0;
+
+/**
+ * Fetch with timeout - prevents UI freeze on network issues
+ * @param {string} url - URL to fetch
+ * @param {object} options - Fetch options
+ * @param {number} timeout - Timeout in milliseconds (default 5000)
+ * @returns {Promise<Response>}
+ */
+async function fetchWithTimeout(url, options = {}, timeout = 5000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    networkOnline = true;
+    return response;
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e.name === 'AbortError') {
+      networkOnline = false;
+      lastNetworkError = Date.now();
+      throw new Error(`Request timeout after ${timeout}ms`);
+    }
+    networkOnline = false;
+    lastNetworkError = Date.now();
+    throw e;
+  }
+}
+
 // === PWM THRUSTER STATUS ===
 async function pollPWMStatus() {
   try {
-    let r = await fetch('/motor/pwm_status', { cache: "no-store" });
+    let r = await fetchWithTimeout('/motor/pwm_status', { cache: "no-store" }, 2000);
     let data = await r.json();
 
     // Update horizontal thruster displays by pin
@@ -49,18 +86,33 @@ function updateThrusterDisplay(pin, duty) {
 setInterval(pollPWMStatus, 100);
 
 // === EMERGENCY STOP ===
-function emergencyStop() {
-  fetch('/motor/all_stop')
-    .then(r => r.json())
-    .then(d => {
+async function emergencyStop() {
+  // Flash screen immediately to show user pressed button
+  document.body.style.boxShadow = 'inset 0 0 100px rgba(255, 0, 0, 0.5)';
+
+  // Retry emergency stop up to 3 times with exponential backoff
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      let r = await fetchWithTimeout('/motor/all_stop', {}, 2000);
+      let d = await r.json();
       console.log("Emergency stop:", d);
-      // Flash screen to confirm
-      document.body.style.boxShadow = 'inset 0 0 100px rgba(255, 0, 0, 0.5)';
+      // Success - clear flash after delay
       setTimeout(() => {
         document.body.style.boxShadow = 'none';
       }, 300);
-    })
-    .catch(console.error);
+      return;
+    } catch (e) {
+      console.error(`Emergency stop attempt ${attempt + 1} failed:`, e);
+      if (attempt < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, 100 * Math.pow(2, attempt)));
+      }
+    }
+  }
+
+  // All retries failed - show error
+  console.error("CRITICAL: Emergency stop failed after all retries!");
+  document.body.style.boxShadow = 'inset 0 0 100px rgba(255, 0, 0, 0.8)';
 }
 
 // === BUTTON FUNCTIONS ===
@@ -97,7 +149,7 @@ async function toggleRecording() {
   try {
     if (!isRecording) {
       // Start recording
-      let r = await fetch('/recording/start', { method: 'POST' });
+      let r = await fetchWithTimeout('/recording/start', { method: 'POST' }, 5000);
       let data = await r.json();
       if (data.success) {
         isRecording = true;
@@ -109,8 +161,8 @@ async function toggleRecording() {
         setTimeout(() => { document.body.style.boxShadow = 'none'; }, 200);
       }
     } else {
-      // Stop recording
-      let r = await fetch('/recording/stop', { method: 'POST' });
+      // Stop recording - allow longer timeout for file finalization
+      let r = await fetchWithTimeout('/recording/stop', { method: 'POST' }, 10000);
       let data = await r.json();
       isRecording = false;
       btn.classList.remove('recording');
@@ -127,7 +179,7 @@ async function toggleRecording() {
 async function pollRecordingStatus() {
   if (!isRecording) return;
   try {
-    let r = await fetch('/recording/status', { cache: "no-store" });
+    let r = await fetchWithTimeout('/recording/status', { cache: "no-store" }, 2000);
     let data = await r.json();
     const statusEl = document.getElementById('recordingStatus');
     if (data.recording) {
@@ -152,7 +204,8 @@ async function captureImage() {
     document.body.style.boxShadow = 'inset 0 0 100px rgba(255, 255, 255, 0.8)';
     setTimeout(() => { document.body.style.boxShadow = 'none'; }, 150);
 
-    let r = await fetch('/capture_image', { method: 'POST' });
+    // Allow longer timeout for high-res capture
+    let r = await fetchWithTimeout('/capture_image', { method: 'POST' }, 10000);
     let data = await r.json();
 
     if (data.success) {
@@ -184,7 +237,7 @@ async function toggleDepthHold() {
   try {
     if (!depthHoldEnabled) {
       // Enable depth hold
-      let r = await fetch('/depth_hold/enable', { method: 'POST' });
+      let r = await fetchWithTimeout('/depth_hold/enable', { method: 'POST' }, 3000);
       let data = await r.json();
       if (data.success) {
         depthHoldEnabled = true;
@@ -194,7 +247,7 @@ async function toggleDepthHold() {
       }
     } else {
       // Disable depth hold
-      let r = await fetch('/depth_hold/disable', { method: 'POST' });
+      let r = await fetchWithTimeout('/depth_hold/disable', { method: 'POST' }, 3000);
       depthHoldEnabled = false;
       btn.classList.remove('active');
       btn.textContent = 'Depth Hold';
@@ -212,11 +265,11 @@ async function updatePIDGains() {
   const kd = parseFloat(document.getElementById('pidKd').value);
 
   try {
-    let r = await fetch('/depth_hold/tune', {
+    let r = await fetchWithTimeout('/depth_hold/tune', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kp, ki, kd })
-    });
+    }, 3000);
     let data = await r.json();
     if (data.success) {
       console.log("PID gains updated:", data.status);
@@ -229,7 +282,7 @@ async function updatePIDGains() {
 // Poll depth hold status
 async function pollDepthHoldStatus() {
   try {
-    let r = await fetch('/depth_hold/status', { cache: "no-store" });
+    let r = await fetchWithTimeout('/depth_hold/status', { cache: "no-store" }, 2000);
     let data = await r.json();
 
     const btn = document.getElementById('depthHoldBtn');
@@ -262,25 +315,28 @@ setInterval(pollDepthHoldStatus, 500);
 async function heartbeatLoop(){
   let btn = document.getElementById("statusBtn");
   try {
-    let r = await fetch('/heartbeat', { cache: "no-store" });
+    let r = await fetchWithTimeout('/heartbeat', { cache: "no-store" }, 1500);
     if (r.ok){
-      btn.textContent = "Pi Status: OK";
+      btn.textContent = "Pi: OK";
       btn.classList.remove("lost");
       btn.classList.add("ok");
+      networkOnline = true;
     } else throw new Error("bad response");
   } catch {
-    btn.textContent = "Pi Status: LOST";
+    btn.textContent = "Pi: LOST";
     btn.classList.remove("ok");
     btn.classList.add("lost");
+    networkOnline = false;
   }
-  setTimeout(heartbeatLoop, 2000);
+  // Faster heartbeat (1 second) for quicker network loss detection
+  setTimeout(heartbeatLoop, 1000);
 }
 heartbeatLoop();
 
 // === TELEMETRY + OVERLAY ===
 async function updateOverlay() {
   try {
-    let r = await fetch('/status', { cache: "no-store" });
+    let r = await fetchWithTimeout('/status', { cache: "no-store" }, 2000);
     let data = await r.json();
     let sensor = data.sensor;
 

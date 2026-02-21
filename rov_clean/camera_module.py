@@ -308,17 +308,18 @@ def stop_recording():
             return None
 
 def get_recording_status():
-    """Return current recording status."""
-    elapsed = 0
-    if recording and recording_start_time:
-        elapsed = time.time() - recording_start_time
+    """Return current recording status (thread-safe)."""
+    with camera_lock:
+        elapsed = 0
+        if recording and recording_start_time:
+            elapsed = time.time() - recording_start_time
 
-    return {
-        "recording": recording,
-        "filename": current_recording_file,
-        "elapsed_seconds": round(elapsed, 1),
-        "ffmpeg_available": FFMPEG_AVAILABLE
-    }
+        return {
+            "recording": recording,
+            "filename": current_recording_file,
+            "elapsed_seconds": round(elapsed, 1),
+            "ffmpeg_available": FFMPEG_AVAILABLE
+        }
 
 def list_recordings():
     """List all recorded video files with sizes."""

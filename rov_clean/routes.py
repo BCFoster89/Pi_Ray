@@ -1,6 +1,6 @@
 # routes.py
 from flask import render_template, jsonify, Response, request, send_from_directory
-import io, time, os
+import io, time, os, math
 import RPi.GPIO as GPIO
 
 from logger import log, log_buffer
@@ -73,47 +73,49 @@ def init_app(app):
     def cal_horizon():
         # reset integrated orientation and zero offsets
         import sensors as s
-        with cal_lock:
-            s.roll_i = s.pitch_i = s.yaw_i = 0.0
-            s.roll_f = s.pitch_f = s.yaw_f = 0.0
-            calib['roll_offset'] = 0.0
-            calib['pitch_offset'] = 0.0
-            calib['yaw_offset'] = 0.0
-            log("[CAL] Zero Horizon pressed")
+        with s.sensor_lock:
+            with cal_lock:
+                s.roll_i = s.pitch_i = s.yaw_i = 0.0
+                s.roll_f = s.pitch_f = s.yaw_f = 0.0
+                calib['roll_offset'] = 0.0
+                calib['pitch_offset'] = 0.0
+                calib['yaw_offset'] = 0.0
+                log("[CAL] Zero Horizon pressed")
         save_calib()
         return "Horizon Zeroed"
 
     @app.route("/zero_imu")
     def zero_imu():
         import sensors as s
-        with cal_lock:
-            if not s.imu_offsets_enabled:
-                # Expected gravity vector along Z axis in body frame (1g downward)
-                expected = {'x': 0.0, 'y': 0.0, 'z': 1.0}
+        with s.sensor_lock:
+            with cal_lock:
+                if not s.imu_offsets_enabled:
+                    # Expected gravity vector along Z axis in body frame (1g downward)
+                    expected = {'x': 0.0, 'y': 0.0, 'z': 1.0}
 
-                ax = sensor_data['accel_x']
-                ay = sensor_data['accel_y']
-                az = sensor_data['accel_z']
+                    ax = sensor_data['accel_x']
+                    ay = sensor_data['accel_y']
+                    az = sensor_data['accel_z']
 
-                s.accel_offsets['x'] = ax - expected['x']
-                s.accel_offsets['y'] = ay - expected['y']
-                s.accel_offsets['z'] = az - expected['z']
+                    s.accel_offsets['x'] = ax - expected['x']
+                    s.accel_offsets['y'] = ay - expected['y']
+                    s.accel_offsets['z'] = az - expected['z']
 
-                s.gyro_offsets['x'] = sensor_data['gyro_x']
-                s.gyro_offsets['y'] = sensor_data['gyro_y']
-                s.gyro_offsets['z'] = sensor_data['gyro_z']
+                    s.gyro_offsets['x'] = sensor_data['gyro_x']
+                    s.gyro_offsets['y'] = sensor_data['gyro_y']
+                    s.gyro_offsets['z'] = sensor_data['gyro_z']
 
-                s.imu_offsets_enabled = True
-                msg = "IMU calibration offsets applied (gravity aligned to Z)"
-            else:
-                s.accel_offsets = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-                s.gyro_offsets  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-                s.imu_offsets_enabled = False
-                msg = "IMU calibration offsets cleared"
+                    s.imu_offsets_enabled = True
+                    msg = "IMU calibration offsets applied (gravity aligned to Z)"
+                else:
+                    s.accel_offsets = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+                    s.gyro_offsets  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+                    s.imu_offsets_enabled = False
+                    msg = "IMU calibration offsets cleared"
 
-            # Reset orientation integration
-            s.roll_i = s.pitch_i = s.yaw_i = 0.0
-            s.roll_f = s.pitch_f = s.yaw_f = 0.0
+                # Reset orientation integration
+                s.roll_i = s.pitch_i = s.yaw_i = 0.0
+                s.roll_f = s.pitch_f = s.yaw_f = 0.0
 
         log("[CAL] Zero IMU pressed")
         return msg
@@ -164,11 +166,25 @@ def init_app(app):
             if not data:
                 return jsonify({"error": "No JSON data received"}), 400
 
-            surge = float(data.get('surge', 0.0))
-            sway = float(data.get('sway', 0.0))
-            yaw = float(data.get('yaw', 0.0))
-            descend = float(data.get('descend', 0.0))
-            ascend = float(data.get('ascend', 0.0))
+            # Helper to safely parse and validate numeric input
+            def safe_float(value, default=0.0):
+                if value is None:
+                    return default
+                if not isinstance(value, (int, float)):
+                    try:
+                        value = float(value)
+                    except (ValueError, TypeError):
+                        return default
+                # Check for NaN or infinity
+                if math.isnan(value) or math.isinf(value):
+                    return default
+                return value
+
+            surge = safe_float(data.get('surge'), 0.0)
+            sway = safe_float(data.get('sway'), 0.0)
+            yaw = safe_float(data.get('yaw'), 0.0)
+            descend = safe_float(data.get('descend'), 0.0)
+            ascend = safe_float(data.get('ascend'), 0.0)
 
             # Clamp values to valid range
             surge = max(-1.0, min(1.0, surge))

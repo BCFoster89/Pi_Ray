@@ -1,6 +1,7 @@
 # motors.py
 import time
 import threading
+import math
 import RPi.GPIO as GPIO
 from gpiozero import PWMOutputDevice
 from logger import log
@@ -38,21 +39,39 @@ class MotorController:
                     return "denied"
                 if now - self.last_time < MIN_ACTIVATE_INTERVAL_S:
                     return "wait"
+                # Collect pins to update
+                pins_to_update = []
                 for p in real_pins:
                     self.status[p] = 1
-                    GPIO.output(p, GPIO.HIGH)
-                    log(f"[MOTOR] {name} ON motor {p}")
-                    time.sleep(GROUP_STAGGER_S)
+                    pins_to_update.append(p)
                 self.active.add(name)
                 self.last_time = now
-                return "on"
+
             else:
+                pins_to_update = []
                 for p in real_pins:
                     self.status[p] = 0
-                    GPIO.output(p, GPIO.LOW)
+                    pins_to_update.append(p)
                 self.active.discard(name)
-                log(f"[MOTOR] {name} OFF")
-                return "off"
+
+        # Perform GPIO operations OUTSIDE lock to prevent blocking
+        if turn_on:
+            for p in pins_to_update:
+                try:
+                    GPIO.output(p, GPIO.HIGH)
+                    log(f"[MOTOR] {name} ON motor {p}")
+                except Exception as e:
+                    log(f"[MOTOR] GPIO error pin {p}: {e}")
+                time.sleep(GROUP_STAGGER_S)
+            return "on"
+        else:
+            for p in pins_to_update:
+                try:
+                    GPIO.output(p, GPIO.LOW)
+                except Exception as e:
+                    log(f"[MOTOR] GPIO error pin {p}: {e}")
+            log(f"[MOTOR] {name} OFF")
+            return "off"
 
 
 class PWMMotorController:
@@ -79,6 +98,21 @@ class PWMMotorController:
         self.ramp_rate = PWM_CONFIG['ramp_rate']
         self.stagger_delay = PWM_CONFIG['stagger_delay']
         self.watchdog_timeout = PWM_CONFIG['watchdog_timeout']
+
+        # Start watchdog thread
+        self._watchdog_running = True
+        self._watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+        self._watchdog_thread.start()
+        log("[PWM] Watchdog thread started")
+
+    def _watchdog_loop(self):
+        """Background thread that checks for motor command timeout."""
+        while self._watchdog_running:
+            try:
+                self.check_watchdog()
+            except Exception as e:
+                log(f"[PWM] Watchdog error: {e}")
+            time.sleep(0.1)  # Check every 100ms
 
     def initialize(self):
         """Initialize PWM devices. Called lazily on first use."""
@@ -194,6 +228,9 @@ class PWMMotorController:
         # Calculate target duty cycles
         target_duties = self.calculate_motor_duties(surge, sway, yaw, descend, ascend)
 
+        # Collect updates to apply (minimize time holding lock)
+        updates_to_apply = []
+
         with self.lock:
             self.last_command_time = time.time()
 
@@ -201,7 +238,7 @@ class PWMMotorController:
             self.descend_value = descend
             self.ascend_value = ascend
 
-            # Apply smoothing and update motors with stagger delay (only real pins)
+            # Calculate smoothed values and collect updates (only real pins)
             for pin in self.REAL_PINS:
                 target = target_duties.get(pin, 0.0)
                 smoothed = self.smooth_duty(pin, target)
@@ -210,16 +247,25 @@ class PWMMotorController:
                 if abs(smoothed - self.current_duties[pin]) > 0.01:
                     self.current_duties[pin] = smoothed
                     if pin in self.pwm_devices:
-                        self.pwm_devices[pin].value = smoothed
-                    time.sleep(self.stagger_delay)
+                        updates_to_apply.append((pin, smoothed))
 
             # Update shared state (include all pins for UI display)
             pwm_state['duties'] = self.current_duties.copy()
             pwm_state['active'] = any(d > 0 for d in self.current_duties.values())
             pwm_state['last_update'] = self.last_command_time
             pwm_state['control_mode'] = 'pwm'
+            result = self.current_duties.copy()
 
-        return self.current_duties.copy()
+        # Apply PWM updates OUTSIDE lock with stagger delay
+        for pin, value in updates_to_apply:
+            try:
+                self.pwm_devices[pin].value = value
+            except Exception as e:
+                log(f"[PWM] Error setting pin {pin}: {e}")
+            if len(updates_to_apply) > 1:
+                time.sleep(self.stagger_delay)
+
+        return result
 
     def emergency_stop(self):
         """Immediately stop all motors."""
