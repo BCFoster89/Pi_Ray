@@ -81,7 +81,8 @@ def generate_frames():
             frame_array = cam.capture_array()
 
             # Convert numpy array to JPEG bytes using PIL (faster than file I/O)
-            img = Image.fromarray(frame_array)
+            # capture_array() returns RGBA; convert to RGB for JPEG compatibility
+            img = Image.fromarray(frame_array).convert('RGB')
 
             # Encode to JPEG with reasonable quality (lower = faster, smaller)
             stream = io.BytesIO()
@@ -195,7 +196,7 @@ def capture_still():
 
     # All processing OUTSIDE lock to not block video stream
     try:
-        img = Image.fromarray(frame_array)
+        img = Image.fromarray(frame_array).convert('RGB')
         img.save(filepath, 'JPEG', quality=95)
         log(f"[CAM] Still captured: {filename}")
 
