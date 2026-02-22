@@ -1,9 +1,9 @@
 # camera_module.py
-import io, time, os, threading, shutil
+import io, time, os, threading, shutil, subprocess
 from datetime import datetime
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
-from picamera2.outputs import FfmpegOutput
+from picamera2.outputs import FileOutput
 from PIL import Image, ImageDraw, ImageFont
 from logger import log
 from config import sensor_data
@@ -15,6 +15,7 @@ camera_lock = threading.Lock()
 recording = False
 recording_start_time = None
 current_recording_file = None
+current_h264_path = None  # Temp H264 file written during recording
 encoder = None
 output = None
 
@@ -211,9 +212,10 @@ def capture_still():
 def start_recording():
     """
     Start recording video.
+    Records raw H264 to a temp file; converted to MP4 on stop.
     Returns the filename being recorded to.
     """
-    global recording, recording_start_time, current_recording_file, encoder, output, picam2
+    global recording, recording_start_time, current_recording_file, current_h264_path, encoder, output, picam2
 
     if not FFMPEG_AVAILABLE:
         log("[CAM] Cannot record - ffmpeg not installed")
@@ -228,18 +230,18 @@ def start_recording():
 
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             filename = f"ROV_{timestamp}.mp4"
-            filepath = os.path.join(RECORDINGS_DIR, filename)
+            h264_path = os.path.join(RECORDINGS_DIR, f"ROV_{timestamp}_temp.h264")
 
-            # Create H264 encoder and output
+            # Write raw H264 directly to disk - avoids ffmpeg subprocess during recording
             encoder = H264Encoder(bitrate=VIDEO_BITRATE)
-            output = FfmpegOutput(filepath)
+            output = FileOutput(h264_path)
 
-            # Start recording
             cam.start_encoder(encoder, output)
 
             recording = True
             recording_start_time = time.time()
             current_recording_file = filename
+            current_h264_path = h264_path
 
             log(f"[CAM] Recording started: {filename} ({VIDEO_SIZE[0]}x{VIDEO_SIZE[1]} @ {VIDEO_BITRATE//1000000}Mbps)")
             return filename
@@ -247,67 +249,68 @@ def start_recording():
         except Exception as e:
             log(f"[CAM] Failed to start recording: {e}")
             recording = False
+            current_h264_path = None
             return None
 
 def stop_recording():
     """
     Stop the current recording.
+    Flushes H264 to disk, then converts to MP4 via ffmpeg.
     Returns the filename of the completed recording.
     """
-    global recording, recording_start_time, current_recording_file, encoder, output, picam2
+    global recording, recording_start_time, current_recording_file, current_h264_path, encoder, output, picam2
 
-    # Capture state variables before releasing lock
     with camera_lock:
         if not recording:
             return None
 
+        filename = current_recording_file
+        h264_path = current_h264_path
+        filepath = os.path.join(RECORDINGS_DIR, filename) if filename else None
+        duration = time.time() - recording_start_time if recording_start_time else 0
+
         try:
             if picam2 is not None and encoder is not None:
-                picam2.stop_encoder()
-
-            # Close the output to ensure ffmpeg finalizes the file
-            # This should block until ffmpeg completes
-            if output is not None:
-                try:
-                    output.close()
-                except Exception:
-                    pass  # May already be closed
-
-            filename = current_recording_file
-            filepath = os.path.join(RECORDINGS_DIR, filename) if filename else None
-            duration = time.time() - recording_start_time if recording_start_time else 0
-
-            recording = False
-            recording_start_time = None
-            current_recording_file = None
-            encoder = None
-            output = None
-
+                picam2.stop_encoder()  # Flushes and closes FileOutput
         except Exception as e:
-            log(f"[CAM] Error during stop_encoder: {e}")
-            recording = False
-            recording_start_time = None
-            current_recording_file = None
-            encoder = None
-            output = None
-            return None
+            log(f"[CAM] Error stopping encoder: {e}")
 
-    # File verification OUTSIDE lock to prevent blocking other operations
-    # Brief wait for filesystem to sync
-    time.sleep(0.2)
+        recording = False
+        recording_start_time = None
+        current_recording_file = None
+        current_h264_path = None
+        encoder = None
+        output = None
 
-    # Quick verification (3 attempts, 200ms each = 600ms max)
-    for attempt in range(3):
-        if filepath and os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-            break
-        time.sleep(0.2)
+    if not h264_path or not filepath:
+        log("[CAM] No recording path set, cannot finalize")
+        return None
 
-    # Log result
-    if filepath and os.path.exists(filepath):
-        file_size = os.path.getsize(filepath)
-        log(f"[CAM] Recording stopped: {filename} ({duration:.1f}s, {file_size/1024/1024:.1f}MB)")
-    else:
-        log(f"[CAM] WARNING: Recording file not found after stop: {filename}")
+    # Convert H264 → MP4 outside lock (ffmpeg runs separately, doesn't block streaming)
+    if not os.path.exists(h264_path):
+        log(f"[CAM] ERROR: H264 temp file missing: {h264_path} - encoder may not have started")
+        return filename
+
+    h264_size = os.path.getsize(h264_path)
+    log(f"[CAM] H264 temp file: {h264_size/1024:.0f} KB, converting to MP4...")
+
+    try:
+        result = subprocess.run(
+            ['ffmpeg', '-y', '-framerate', '30', '-i', h264_path,
+             '-c:v', 'copy', filepath],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode == 0:
+            os.remove(h264_path)
+            file_size = os.path.getsize(filepath)
+            log(f"[CAM] Recording saved: {filename} ({duration:.1f}s, {file_size/1024/1024:.1f}MB)")
+        else:
+            log(f"[CAM] ffmpeg conversion failed (code {result.returncode}): {result.stderr.strip()}")
+            log(f"[CAM] H264 file preserved at: {h264_path}")
+    except subprocess.TimeoutExpired:
+        log("[CAM] ffmpeg conversion timed out after 60s")
+    except Exception as e:
+        log(f"[CAM] Conversion error: {e}")
 
     return filename
 
