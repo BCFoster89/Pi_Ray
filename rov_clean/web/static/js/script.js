@@ -259,6 +259,40 @@ async function toggleDepthHold() {
   }
 }
 
+async function goToDepth() {
+  const input = document.getElementById('targetDepthInput');
+  const btn = document.getElementById('depthHoldBtn');
+  const statusEl = document.getElementById('depthHoldStatus');
+
+  const targetDepth = parseFloat(input.value);
+  if (isNaN(targetDepth) || targetDepth < 0) {
+    statusEl.textContent = 'Enter valid depth';
+    return;
+  }
+
+  try {
+    let r = await fetchWithTimeout('/depth_hold/go_to', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_depth: targetDepth })
+    }, 3000);
+
+    let data = await r.json();
+    if (data.success) {
+      depthHoldEnabled = true;
+      btn.classList.add('active');
+      btn.textContent = 'Release';
+      statusEl.textContent = `Going to: ${targetDepth.toFixed(1)} ft`;
+      input.value = '';  // Clear input
+    } else {
+      statusEl.textContent = data.error || 'Error';
+    }
+  } catch (e) {
+    console.error("Go to depth error:", e);
+    statusEl.textContent = 'Error';
+  }
+}
+
 async function updatePIDGains() {
   const kp = parseFloat(document.getElementById('pidKp').value);
   const ki = parseFloat(document.getElementById('pidKi').value);

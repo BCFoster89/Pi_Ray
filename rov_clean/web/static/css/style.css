@@ -115,6 +115,36 @@ html, body {
   gap: 6px;
 }
 
+/* Go to depth input row */
+.go-to-depth {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.go-to-depth input {
+  flex: 1;
+  width: 60px;
+  padding: 4px 6px;
+  font-size: 12px;
+  background: #012;
+  color: #0ff;
+  border: 1px solid #0ff;
+  border-radius: 3px;
+  text-align: center;
+}
+
+.go-to-depth input::placeholder {
+  color: #0aa;
+  opacity: 0.6;
+}
+
+.go-to-depth button {
+  padding: 4px 12px;
+  font-size: 12px;
+  min-width: 40px;
+}
+
 /* Compact buttons */
 button {
   background: #123;

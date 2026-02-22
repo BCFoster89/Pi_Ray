@@ -95,6 +95,10 @@
       <div class="button-grid">
         <button id="depthHoldBtn" onclick="toggleDepthHold()">Depth Hold</button>
       </div>
+      <div class="go-to-depth">
+        <input type="number" id="targetDepthInput" placeholder="ft" step="0.5" min="0" max="100">
+        <button id="goToDepthBtn" onclick="goToDepth()">Go</button>
+      </div>
       <div id="depthHoldStatus" class="depth-hold-status"></div>
       <div class="pid-tuning" id="pidTuning">
         <div class="pid-row">

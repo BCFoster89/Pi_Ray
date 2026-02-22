@@ -359,3 +359,28 @@ def init_app(app):
             log(f"[DEPTH] Tune error: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
 
+    @app.route("/depth_hold/go_to", methods=["POST"])
+    def depth_hold_go_to():
+        """Go to a specific target depth."""
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "No JSON data received"}), 400
+
+            target = data.get('target_depth')
+            if target is None:
+                return jsonify({"error": "target_depth required"}), 400
+
+            target = float(target)
+            if target < 0:
+                return jsonify({"error": "target_depth must be >= 0"}), 400
+
+            depth_controller.go_to_depth(target)
+            status = depth_controller.get_status()
+            return jsonify({"success": True, "status": status})
+        except ValueError:
+            return jsonify({"error": "Invalid target_depth value"}), 400
+        except Exception as e:
+            log(f"[DEPTH] Go to depth error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+

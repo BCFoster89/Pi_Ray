@@ -88,6 +88,33 @@ class DepthHoldController:
 
             log(f"[DEPTH] Depth hold ENABLED at {current_depth:.2f} ft")
 
+    def go_to_depth(self, target_ft):
+        """
+        Go to a specific target depth.
+        Enables depth hold and drives to the specified depth.
+        """
+        with self._lock:
+            was_enabled = self.enabled
+
+            # Set the target depth
+            self.target_depth = target_ft
+
+            # Reset PID state for fresh start
+            self.integral = 0.0
+            self.last_error = 0.0
+            self.last_time = time.time()
+
+            if not was_enabled:
+                self.enabled = True
+                self._running = True
+
+                # Start background thread
+                self._thread = threading.Thread(target=self._control_loop, daemon=True)
+                self._thread.start()
+
+            current_depth = sensor_data.get('depth_ft', 0.0)
+            log(f"[DEPTH] Go to depth: {target_ft:.2f} ft (current: {current_depth:.2f} ft)")
+
     def disable(self):
         """Disable depth hold and return to manual control."""
         with self._lock:
