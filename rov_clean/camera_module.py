@@ -1,5 +1,5 @@
 # camera_module.py
-import io, time, os, threading, shutil, subprocess
+import io, time, os, threading, shutil, subprocess, math
 from datetime import datetime
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
@@ -15,9 +15,8 @@ camera_lock = threading.Lock()
 recording = False
 recording_start_time = None
 current_recording_file = None
-current_h264_path = None  # Temp H264 file written during recording
-encoder = None
-output = None
+_recording_thread = None
+_recording_stop_event = None
 
 # Directories for saved files
 RECORDINGS_DIR = os.path.join(os.path.dirname(__file__), 'recordings')
@@ -34,9 +33,30 @@ if FFMPEG_AVAILABLE:
 else:
     log("[CAM] WARNING: ffmpeg not found - install with: sudo apt install ffmpeg")
 
-# Video resolution - 1080p (optimized for Pi3)
+# Video resolution - 1080p for streaming, 720p for overlay recording (Pi3 performance)
 VIDEO_SIZE = (1920, 1080)
-VIDEO_BITRATE = 8000000  # 8 Mbps - sustainable on Pi3 without thermal throttling
+RECORD_SIZE = (1280, 720)  # Lower res for overlay recording - better Pi3 performance
+VIDEO_BITRATE = 8000000  # 8 Mbps
+RECORD_FPS = 24  # Target FPS for overlay recording
+
+# Load font once at module level
+_font = None
+_font_small = None
+_font_large = None
+
+def _get_fonts():
+    """Load fonts lazily."""
+    global _font, _font_small, _font_large
+    if _font is None:
+        try:
+            _font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 20)
+            _font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 16)
+            _font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 28)
+        except:
+            _font = ImageFont.load_default()
+            _font_small = _font
+            _font_large = _font
+    return _font, _font_small, _font_large
 
 def init_camera():
     """Initialize the Picamera2 instance lazily and return it."""
@@ -62,6 +82,122 @@ def init_camera():
             log(f"[CAM] Failed to init camera: {e}")
             raise
     return picam2
+
+def draw_hud_overlay(img, rec_duration=None):
+    """
+    Draw full HUD overlay on a PIL Image (in-place).
+    Includes: telemetry bar, artificial horizon, recording indicator.
+    """
+    font, font_small, font_large = _get_fonts()
+    draw = ImageDraw.Draw(img)
+    w, h = img.size
+
+    # Get current sensor data
+    depth = sensor_data.get('depth_ft', 0.0)
+    pitch = sensor_data.get('pitch', 0.0)
+    roll = sensor_data.get('roll', 0.0)
+    heading = sensor_data.get('yaw', 0.0)
+    temp = sensor_data.get('temperature_f', 0.0)
+    leak = sensor_data.get('leak_detected', False)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # === ARTIFICIAL HORIZON (center of frame) ===
+    horizon_size = min(w, h) // 5  # Size of horizon indicator
+    cx, cy = w // 2, h // 2 - 30  # Center point, slightly above middle
+
+    # Draw horizon circle (outer ring)
+    draw.ellipse(
+        [cx - horizon_size, cy - horizon_size, cx + horizon_size, cy + horizon_size],
+        outline=(0, 255, 255, 180), width=2
+    )
+
+    # Calculate horizon line based on roll and pitch
+    roll_rad = math.radians(-roll)  # Negative for correct visual direction
+    pitch_offset = int((pitch / 45.0) * horizon_size)  # Scale pitch to pixels
+
+    # Horizon line endpoints (tilted by roll, shifted by pitch)
+    line_len = horizon_size - 5
+    x1 = cx - int(line_len * math.cos(roll_rad))
+    y1 = cy - int(line_len * math.sin(roll_rad)) + pitch_offset
+    x2 = cx + int(line_len * math.cos(roll_rad))
+    y2 = cy + int(line_len * math.sin(roll_rad)) + pitch_offset
+
+    # Draw sky/ground division line
+    draw.line([(x1, y1), (x2, y2)], fill=(0, 255, 0, 255), width=3)
+
+    # Draw center crosshair (fixed reference)
+    cross_size = 15
+    draw.line([(cx - cross_size, cy), (cx + cross_size, cy)], fill=(255, 255, 0, 200), width=2)
+    draw.line([(cx, cy - cross_size), (cx, cy + cross_size)], fill=(255, 255, 0, 200), width=2)
+
+    # Draw roll indicator arc
+    for angle in [-60, -45, -30, -15, 0, 15, 30, 45, 60]:
+        rad = math.radians(angle - 90)
+        inner = horizon_size + 5
+        outer = horizon_size + (15 if angle % 30 == 0 else 8)
+        x1 = cx + int(inner * math.cos(rad))
+        y1 = cy + int(inner * math.sin(rad))
+        x2 = cx + int(outer * math.cos(rad))
+        y2 = cy + int(outer * math.sin(rad))
+        draw.line([(x1, y1), (x2, y2)], fill=(0, 255, 255, 180), width=2)
+
+    # Draw pitch ladder (small lines showing pitch degrees)
+    for pitch_mark in [-20, -10, 10, 20]:
+        mark_y = cy + int((pitch_mark / 45.0) * horizon_size) + pitch_offset
+        if cy - horizon_size < mark_y < cy + horizon_size:
+            draw.line([(cx - 20, mark_y), (cx + 20, mark_y)], fill=(0, 255, 255, 120), width=1)
+            draw.text((cx + 25, mark_y - 8), f"{-pitch_mark}", font=font_small, fill=(0, 255, 255, 150))
+
+    # === DEPTH (large, left side) ===
+    depth_text = f"{depth:.1f}"
+    draw.text((30, h // 2 - 40), "DEPTH", font=font_small, fill=(0, 255, 255, 200))
+    draw.text((30, h // 2 - 20), depth_text, font=font_large, fill=(255, 255, 255, 255))
+    draw.text((30 + len(depth_text) * 18, h // 2 - 12), "ft", font=font_small, fill=(200, 200, 200, 200))
+
+    # === HEADING (top center) ===
+    heading_text = f"{heading:.0f}°"
+    heading_label = _heading_to_cardinal(heading)
+    draw.text((w // 2 - 30, 20), f"HDG {heading_text} {heading_label}", font=font, fill=(0, 255, 255, 230))
+
+    # === RECORDING INDICATOR (top left) ===
+    if rec_duration is not None:
+        mins = int(rec_duration // 60)
+        secs = int(rec_duration % 60)
+        # Red recording dot
+        draw.ellipse([20, 20, 35, 35], fill=(255, 0, 0, 255))
+        draw.text((45, 18), f"REC {mins:02d}:{secs:02d}", font=font, fill=(255, 50, 50, 255))
+
+    # === LEAK WARNING (top right) ===
+    if leak:
+        draw.rectangle([w - 150, 15, w - 10, 45], fill=(255, 0, 0, 200))
+        draw.text((w - 145, 18), "LEAK!", font=font, fill=(255, 255, 255, 255))
+
+    # === TELEMETRY BAR (bottom) ===
+    bar_height = 35
+    bar_y = h - bar_height
+
+    # Semi-transparent background bar
+    overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    overlay_draw.rectangle([(0, bar_y), (w, h)], fill=(0, 0, 0, 160))
+    img.paste(Image.alpha_composite(img.convert('RGBA'), overlay).convert('RGB'))
+
+    # Redraw on composited image
+    draw = ImageDraw.Draw(img)
+
+    # Telemetry text
+    telem = f"Depth: {depth:.1f}ft | Pitch: {pitch:.1f}° | Roll: {roll:.1f}° | HDG: {heading:.0f}° | Temp: {temp:.1f}°F | {timestamp}"
+    bbox = draw.textbbox((0, 0), telem, font=font)
+    text_w = bbox[2] - bbox[0]
+    draw.text(((w - text_w) // 2, bar_y + 8), telem, font=font, fill=(255, 255, 255, 255))
+
+    return img
+
+def _heading_to_cardinal(heading):
+    """Convert heading degrees to cardinal direction."""
+    dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+    idx = int((heading + 22.5) // 45) % 8
+    return dirs[idx]
 
 def generate_frames():
     """Generator that yields JPEG frames from the Picamera2.
@@ -107,66 +243,14 @@ def generate_frames():
             time.sleep(0.5)  # Brief pause on error before retry
 
 def add_telemetry_overlay(filepath):
-    """Add telemetry text overlay to a captured image using Pillow."""
+    """Add full HUD overlay to a captured image."""
     try:
-        img = Image.open(filepath)
-        draw = ImageDraw.Draw(img)
-
-        # Get current sensor data
-        depth = sensor_data.get('depth_ft', 0.0)
-        pitch = sensor_data.get('pitch', 0.0)
-        roll = sensor_data.get('roll', 0.0)
-        heading = sensor_data.get('yaw', 0.0)
-        water_temp = sensor_data.get('temperature_f', 0.0)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Format telemetry string
-        telemetry_text = (
-            f"Depth: {depth:.1f} ft  |  Pitch: {pitch:.1f}°  |  Roll: {roll:.1f}°  |  "
-            f"Heading: {heading:.0f}°  |  Water: {water_temp:.1f}°F  |  {timestamp}"
-        )
-
-        # Try to use a monospace font, fall back to default
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 36)
-        except:
-            font = ImageFont.load_default()
-
-        # Calculate text size and position
-        bbox = draw.textbbox((0, 0), telemetry_text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-
-        img_width, img_height = img.size
-        bar_height = text_height + 20
-        bar_y = img_height - bar_height
-
-        # Draw semi-transparent black bar at bottom
-        overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
-        overlay_draw = ImageDraw.Draw(overlay)
-        overlay_draw.rectangle(
-            [(0, bar_y), (img_width, img_height)],
-            fill=(0, 0, 0, 180)
-        )
-
-        # Composite the overlay
-        if img.mode != 'RGBA':
-            img = img.convert('RGBA')
-        img = Image.alpha_composite(img, overlay)
-
-        # Draw text
-        draw = ImageDraw.Draw(img)
-        text_x = (img_width - text_width) // 2
-        text_y = bar_y + 10
-        draw.text((text_x, text_y), telemetry_text, font=font, fill=(255, 255, 255, 255))
-
-        # Convert back to RGB for JPEG save
-        img = img.convert('RGB')
+        img = Image.open(filepath).convert('RGB')
+        img = draw_hud_overlay(img, rec_duration=None)
         img.save(filepath, 'JPEG', quality=95)
-        log(f"[CAM] Telemetry overlay added to image")
-
+        log(f"[CAM] HUD overlay added to image")
     except Exception as e:
-        log(f"[CAM] Failed to add telemetry overlay: {e}")
+        log(f"[CAM] Failed to add overlay: {e}")
 
 def capture_still():
     """
@@ -209,108 +293,160 @@ def capture_still():
         log(f"[CAM] Still save error: {e}")
         return None
 
+def _recording_loop(filepath, stop_event, start_time):
+    """
+    Background thread: capture frames, draw HUD overlay, pipe to ffmpeg.
+    Runs until stop_event is set.
+    """
+    global picam2
+
+    try:
+        # Start ffmpeg process to receive frames via pipe
+        ffmpeg_cmd = [
+            'ffmpeg', '-y',
+            '-f', 'rawvideo',
+            '-pix_fmt', 'rgb24',
+            '-s', f'{RECORD_SIZE[0]}x{RECORD_SIZE[1]}',
+            '-r', str(RECORD_FPS),
+            '-i', 'pipe:0',
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',  # Fast encoding for Pi3
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            filepath
+        ]
+
+        ffmpeg = subprocess.Popen(
+            ffmpeg_cmd,
+            stdin=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+
+        frame_interval = 1.0 / RECORD_FPS
+        last_frame_time = time.time()
+        frames_written = 0
+
+        while not stop_event.is_set():
+            try:
+                # Throttle to target FPS
+                now = time.time()
+                elapsed_since_last = now - last_frame_time
+                if elapsed_since_last < frame_interval:
+                    time.sleep(frame_interval - elapsed_since_last)
+
+                last_frame_time = time.time()
+                rec_duration = last_frame_time - start_time
+
+                # Capture frame
+                with camera_lock:
+                    if picam2 is None:
+                        continue
+                    frame_array = picam2.capture_array()
+
+                # Convert and resize for recording
+                img = Image.fromarray(frame_array).convert('RGB')
+                img = img.resize(RECORD_SIZE, Image.BILINEAR)
+
+                # Draw HUD overlay
+                img = draw_hud_overlay(img, rec_duration=rec_duration)
+
+                # Write to ffmpeg
+                ffmpeg.stdin.write(img.tobytes())
+                frames_written += 1
+
+            except Exception as e:
+                if not stop_event.is_set():
+                    log(f"[CAM] Recording frame error: {e}")
+                break
+
+        # Finalize
+        if ffmpeg.stdin:
+            ffmpeg.stdin.close()
+        ffmpeg.wait(timeout=30)
+
+        log(f"[CAM] Recording complete: {frames_written} frames written")
+
+    except Exception as e:
+        log(f"[CAM] Recording thread error: {e}")
+
 def start_recording():
     """
-    Start recording video.
-    Records raw H264 to a temp file; converted to MP4 on stop.
+    Start recording video with HUD overlay burned in.
+    Captures frames in background thread, draws overlay, pipes to ffmpeg.
     Returns the filename being recorded to.
     """
-    global recording, recording_start_time, current_recording_file, current_h264_path, encoder, output, picam2
+    global recording, recording_start_time, current_recording_file, _recording_thread, _recording_stop_event
 
     if not FFMPEG_AVAILABLE:
         log("[CAM] Cannot record - ffmpeg not installed")
         return None
 
-    with camera_lock:
-        if recording:
-            return current_recording_file  # Already recording
+    if recording:
+        return current_recording_file
 
-        try:
-            cam = init_camera()
+    try:
+        init_camera()  # Ensure camera is initialized
 
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            filename = f"ROV_{timestamp}.mp4"
-            h264_path = os.path.join(RECORDINGS_DIR, f"ROV_{timestamp}_temp.h264")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"ROV_{timestamp}.mp4"
+        filepath = os.path.join(RECORDINGS_DIR, filename)
 
-            # Write raw H264 directly to disk - avoids ffmpeg subprocess during recording
-            encoder = H264Encoder(bitrate=VIDEO_BITRATE)
-            output = FileOutput(h264_path)
+        recording_start_time = time.time()
+        current_recording_file = filename
 
-            cam.start_encoder(encoder, output)
+        # Create stop event and start recording thread
+        _recording_stop_event = threading.Event()
+        _recording_thread = threading.Thread(
+            target=_recording_loop,
+            args=(filepath, _recording_stop_event, recording_start_time),
+            daemon=True
+        )
+        _recording_thread.start()
 
-            recording = True
-            recording_start_time = time.time()
-            current_recording_file = filename
-            current_h264_path = h264_path
+        recording = True
+        log(f"[CAM] Recording started: {filename} ({RECORD_SIZE[0]}x{RECORD_SIZE[1]} @ {RECORD_FPS}fps with HUD)")
+        return filename
 
-            log(f"[CAM] Recording started: {filename} ({VIDEO_SIZE[0]}x{VIDEO_SIZE[1]} @ {VIDEO_BITRATE//1000000}Mbps)")
-            return filename
-
-        except Exception as e:
-            log(f"[CAM] Failed to start recording: {e}")
-            recording = False
-            current_h264_path = None
-            return None
+    except Exception as e:
+        log(f"[CAM] Failed to start recording: {e}")
+        recording = False
+        return None
 
 def stop_recording():
     """
     Stop the current recording.
-    Flushes H264 to disk, then converts to MP4 via ffmpeg.
+    Signals background thread to stop and waits for ffmpeg to finalize.
     Returns the filename of the completed recording.
     """
-    global recording, recording_start_time, current_recording_file, current_h264_path, encoder, output, picam2
+    global recording, recording_start_time, current_recording_file, _recording_thread, _recording_stop_event
 
-    with camera_lock:
-        if not recording:
-            return None
-
-        filename = current_recording_file
-        h264_path = current_h264_path
-        filepath = os.path.join(RECORDINGS_DIR, filename) if filename else None
-        duration = time.time() - recording_start_time if recording_start_time else 0
-
-        try:
-            if picam2 is not None and encoder is not None:
-                picam2.stop_encoder()  # Flushes and closes FileOutput
-        except Exception as e:
-            log(f"[CAM] Error stopping encoder: {e}")
-
-        recording = False
-        recording_start_time = None
-        current_recording_file = None
-        current_h264_path = None
-        encoder = None
-        output = None
-
-    if not h264_path or not filepath:
-        log("[CAM] No recording path set, cannot finalize")
+    if not recording:
         return None
 
-    # Convert H264 → MP4 outside lock (ffmpeg runs separately, doesn't block streaming)
-    if not os.path.exists(h264_path):
-        log(f"[CAM] ERROR: H264 temp file missing: {h264_path} - encoder may not have started")
-        return filename
+    filename = current_recording_file
+    filepath = os.path.join(RECORDINGS_DIR, filename) if filename else None
+    duration = time.time() - recording_start_time if recording_start_time else 0
 
-    h264_size = os.path.getsize(h264_path)
-    log(f"[CAM] H264 temp file: {h264_size/1024:.0f} KB, converting to MP4...")
+    # Signal thread to stop
+    if _recording_stop_event:
+        _recording_stop_event.set()
 
-    try:
-        result = subprocess.run(
-            ['ffmpeg', '-y', '-framerate', '30', '-i', h264_path,
-             '-c:v', 'copy', filepath],
-            capture_output=True, text=True, timeout=60
-        )
-        if result.returncode == 0:
-            os.remove(h264_path)
-            file_size = os.path.getsize(filepath)
-            log(f"[CAM] Recording saved: {filename} ({duration:.1f}s, {file_size/1024/1024:.1f}MB)")
-        else:
-            log(f"[CAM] ffmpeg conversion failed (code {result.returncode}): {result.stderr.strip()}")
-            log(f"[CAM] H264 file preserved at: {h264_path}")
-    except subprocess.TimeoutExpired:
-        log("[CAM] ffmpeg conversion timed out after 60s")
-    except Exception as e:
-        log(f"[CAM] Conversion error: {e}")
+    # Wait for thread to finish
+    if _recording_thread and _recording_thread.is_alive():
+        _recording_thread.join(timeout=10)
+
+    recording = False
+    recording_start_time = None
+    current_recording_file = None
+    _recording_thread = None
+    _recording_stop_event = None
+
+    # Verify file
+    if filepath and os.path.exists(filepath):
+        file_size = os.path.getsize(filepath)
+        log(f"[CAM] Recording saved: {filename} ({duration:.1f}s, {file_size/1024/1024:.1f}MB)")
+    else:
+        log(f"[CAM] WARNING: Recording file not found: {filename}")
 
     return filename
 
