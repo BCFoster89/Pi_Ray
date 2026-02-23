@@ -1,5 +1,5 @@
 # camera_module.py
-import io, time, os, threading, shutil, subprocess, math
+import io, time, os, threading, shutil, subprocess
 from datetime import datetime
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
@@ -85,11 +85,10 @@ def init_camera():
 
 def draw_hud_overlay(img, rec_duration=None):
     """
-    Draw full HUD overlay on a PIL Image (in-place).
-    Includes: telemetry bar, artificial horizon, recording indicator.
+    Draw HUD overlay on a PIL Image.
+    Includes: telemetry bar, recording indicator, leak warning.
     """
     font, font_small, font_large = _get_fonts()
-    draw = ImageDraw.Draw(img)
     w, h = img.size
 
     # Get current sensor data
@@ -101,77 +100,6 @@ def draw_hud_overlay(img, rec_duration=None):
     leak = sensor_data.get('leak_detected', False)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # === ARTIFICIAL HORIZON (center of frame) ===
-    horizon_size = min(w, h) // 5  # Size of horizon indicator
-    cx, cy = w // 2, h // 2 - 30  # Center point, slightly above middle
-
-    # Draw horizon circle (outer ring)
-    draw.ellipse(
-        [cx - horizon_size, cy - horizon_size, cx + horizon_size, cy + horizon_size],
-        outline=(0, 255, 255, 180), width=2
-    )
-
-    # Calculate horizon line based on roll and pitch
-    roll_rad = math.radians(-roll)  # Negative for correct visual direction
-    pitch_offset = int((pitch / 45.0) * horizon_size)  # Scale pitch to pixels
-
-    # Horizon line endpoints (tilted by roll, shifted by pitch)
-    line_len = horizon_size - 5
-    x1 = cx - int(line_len * math.cos(roll_rad))
-    y1 = cy - int(line_len * math.sin(roll_rad)) + pitch_offset
-    x2 = cx + int(line_len * math.cos(roll_rad))
-    y2 = cy + int(line_len * math.sin(roll_rad)) + pitch_offset
-
-    # Draw sky/ground division line
-    draw.line([(x1, y1), (x2, y2)], fill=(0, 255, 0, 255), width=3)
-
-    # Draw center crosshair (fixed reference)
-    cross_size = 15
-    draw.line([(cx - cross_size, cy), (cx + cross_size, cy)], fill=(255, 255, 0, 200), width=2)
-    draw.line([(cx, cy - cross_size), (cx, cy + cross_size)], fill=(255, 255, 0, 200), width=2)
-
-    # Draw roll indicator arc
-    for angle in [-60, -45, -30, -15, 0, 15, 30, 45, 60]:
-        rad = math.radians(angle - 90)
-        inner = horizon_size + 5
-        outer = horizon_size + (15 if angle % 30 == 0 else 8)
-        x1 = cx + int(inner * math.cos(rad))
-        y1 = cy + int(inner * math.sin(rad))
-        x2 = cx + int(outer * math.cos(rad))
-        y2 = cy + int(outer * math.sin(rad))
-        draw.line([(x1, y1), (x2, y2)], fill=(0, 255, 255, 180), width=2)
-
-    # Draw pitch ladder (small lines showing pitch degrees)
-    for pitch_mark in [-20, -10, 10, 20]:
-        mark_y = cy + int((pitch_mark / 45.0) * horizon_size) + pitch_offset
-        if cy - horizon_size < mark_y < cy + horizon_size:
-            draw.line([(cx - 20, mark_y), (cx + 20, mark_y)], fill=(0, 255, 255, 120), width=1)
-            draw.text((cx + 25, mark_y - 8), f"{-pitch_mark}", font=font_small, fill=(0, 255, 255, 150))
-
-    # === DEPTH (large, left side) ===
-    depth_text = f"{depth:.1f}"
-    draw.text((30, h // 2 - 40), "DEPTH", font=font_small, fill=(0, 255, 255, 200))
-    draw.text((30, h // 2 - 20), depth_text, font=font_large, fill=(255, 255, 255, 255))
-    draw.text((30 + len(depth_text) * 18, h // 2 - 12), "ft", font=font_small, fill=(200, 200, 200, 200))
-
-    # === HEADING (top center) ===
-    heading_text = f"{heading:.0f}°"
-    heading_label = _heading_to_cardinal(heading)
-    draw.text((w // 2 - 30, 20), f"HDG {heading_text} {heading_label}", font=font, fill=(0, 255, 255, 230))
-
-    # === RECORDING INDICATOR (top left) ===
-    if rec_duration is not None:
-        mins = int(rec_duration // 60)
-        secs = int(rec_duration % 60)
-        # Red recording dot
-        draw.ellipse([20, 20, 35, 35], fill=(255, 0, 0, 255))
-        draw.text((45, 18), f"REC {mins:02d}:{secs:02d}", font=font, fill=(255, 50, 50, 255))
-
-    # === LEAK WARNING (top right) ===
-    if leak:
-        draw.rectangle([w - 150, 15, w - 10, 45], fill=(255, 0, 0, 200))
-        draw.text((w - 145, 18), "LEAK!", font=font, fill=(255, 255, 255, 255))
-
     # === TELEMETRY BAR (bottom) ===
     bar_height = 35
     bar_y = h - bar_height
@@ -182,22 +110,26 @@ def draw_hud_overlay(img, rec_duration=None):
     overlay_draw.rectangle([(0, bar_y), (w, h)], fill=(0, 0, 0, 160))
     img.paste(Image.alpha_composite(img.convert('RGBA'), overlay).convert('RGB'))
 
-    # Redraw on composited image
     draw = ImageDraw.Draw(img)
 
-    # Telemetry text
     telem = f"Depth: {depth:.1f}ft | Pitch: {pitch:.1f}° | Roll: {roll:.1f}° | HDG: {heading:.0f}° | Temp: {temp:.1f}°F | {timestamp}"
     bbox = draw.textbbox((0, 0), telem, font=font)
     text_w = bbox[2] - bbox[0]
     draw.text(((w - text_w) // 2, bar_y + 8), telem, font=font, fill=(255, 255, 255, 255))
 
-    return img
+    # === RECORDING INDICATOR (top left) ===
+    if rec_duration is not None:
+        mins = int(rec_duration // 60)
+        secs = int(rec_duration % 60)
+        draw.ellipse([20, 20, 35, 35], fill=(255, 0, 0, 255))
+        draw.text((45, 18), f"REC {mins:02d}:{secs:02d}", font=font, fill=(255, 50, 50, 255))
 
-def _heading_to_cardinal(heading):
-    """Convert heading degrees to cardinal direction."""
-    dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-    idx = int((heading + 22.5) // 45) % 8
-    return dirs[idx]
+    # === LEAK WARNING (top right) ===
+    if leak:
+        draw.rectangle([w - 150, 15, w - 10, 45], fill=(255, 0, 0, 200))
+        draw.text((w - 145, 18), "LEAK!", font=font, fill=(255, 255, 255, 255))
+
+    return img
 
 def generate_frames():
     """Generator that yields JPEG frames from the Picamera2.
