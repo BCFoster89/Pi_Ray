@@ -1,3 +1,6 @@
+// === DEAD RECKONING STATE ===
+let drState = { x: 0, y: 0, vx: 0, vy: 0, trail: [], lastTime: null };
+
 // === E-STOP STATE ===
 let estopLocked = false;
 
@@ -349,6 +352,10 @@ async function updateOverlay() {
     // draw HUD
     drawHUD(sensor);
 
+    // dead reckoning update and map draw
+    updateDeadReckoning(sensor);
+    drawDRMap(sensor);
+
     // update telemetry card — heading displayed as integer (aviation convention)
     const telemetryEl = document.getElementById("telemetry");
 
@@ -599,4 +606,204 @@ function drawHUD(sensor){
   ctx.textAlign = "left";
   // Position below the artificial horizon circle (ahY + ahRadius + margin)
   ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, ahY + ahRadius + 30);
+}
+
+// === DEAD RECKONING ===
+function updateDeadReckoning(sensor) {
+  const now = performance.now() / 1000; // seconds
+  if (drState.lastTime === null) {
+    drState.lastTime = now;
+    return;
+  }
+  const dt = now - drState.lastTime;
+  drState.lastTime = now;
+
+  // Clamp dt to avoid large jumps (e.g. tab was backgrounded)
+  if (dt <= 0 || dt > 1) return;
+
+  const pitch = (sensor.pitch || 0) * Math.PI / 180;
+  const roll  = (sensor.roll  || 0) * Math.PI / 180;
+  const yaw   = (sensor.yaw   || 0) * Math.PI / 180;
+
+  // Gravity-compensated body-frame acceleration
+  const ax_body = (sensor.accel_x || 0) + Math.sin(pitch) * 9.81;
+  const ay_body = (sensor.accel_y || 0) - Math.sin(roll) * Math.cos(pitch) * 9.81;
+
+  // Rotate body-frame to world-frame using yaw heading
+  const ax_world = ax_body * Math.cos(yaw) - ay_body * Math.sin(yaw);
+  const ay_world = ax_body * Math.sin(yaw) + ay_body * Math.cos(yaw);
+
+  // Integrate with damping
+  const damping = 0.95;
+  drState.vx = (drState.vx + ax_world * dt) * damping;
+  drState.vy = (drState.vy + ay_world * dt) * damping;
+  drState.x += drState.vx * dt;
+  drState.y += drState.vy * dt;
+
+  // Append to trail (cap at 500 points)
+  drState.trail.push({ x: drState.x, y: drState.y });
+  if (drState.trail.length > 500) {
+    drState.trail.shift();
+  }
+}
+
+function drawDRMap(sensor) {
+  const canvas = document.getElementById('drMapCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Set actual pixel size to match CSS size
+  canvas.width = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
+
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Dark background
+  ctx.fillStyle = '#0a1020';
+  ctx.fillRect(0, 0, w, h);
+
+  // Compute bounding box of trail + current position
+  let minX = drState.x, maxX = drState.x;
+  let minY = drState.y, maxY = drState.y;
+  for (const pt of drState.trail) {
+    if (pt.x < minX) minX = pt.x;
+    if (pt.x > maxX) maxX = pt.x;
+    if (pt.y < minY) minY = pt.y;
+    if (pt.y > maxY) maxY = pt.y;
+  }
+
+  // Minimum 2m view in each axis, add margin
+  const margin = 0.5;
+  const rangeX = Math.max(maxX - minX + margin * 2, 2);
+  const rangeY = Math.max(maxY - minY + margin * 2, 2);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+
+  // Uniform scale (fit both axes, leave padding)
+  const pad = 20;
+  const scaleX = (w - pad * 2) / rangeX;
+  const scaleY = (h - pad * 2) / rangeY;
+  const scale = Math.min(scaleX, scaleY);
+
+  // Map world coords to canvas coords
+  function toCanvas(wx, wy) {
+    return {
+      cx: w / 2 + (wx - centerX) * scale,
+      cy: h / 2 - (wy - centerY) * scale  // flip Y so +Y is up
+    };
+  }
+
+  // Draw grid
+  ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+  ctx.lineWidth = 1;
+  const gridStep = gridInterval(rangeX, rangeY);
+  const gridMinX = Math.floor((centerX - rangeX / 2) / gridStep) * gridStep;
+  const gridMaxX = Math.ceil((centerX + rangeX / 2) / gridStep) * gridStep;
+  const gridMinY = Math.floor((centerY - rangeY / 2) / gridStep) * gridStep;
+  const gridMaxY = Math.ceil((centerY + rangeY / 2) / gridStep) * gridStep;
+
+  for (let gx = gridMinX; gx <= gridMaxX; gx += gridStep) {
+    const p = toCanvas(gx, 0);
+    ctx.beginPath();
+    ctx.moveTo(p.cx, 0);
+    ctx.lineTo(p.cx, h);
+    ctx.stroke();
+  }
+  for (let gy = gridMinY; gy <= gridMaxY; gy += gridStep) {
+    const p = toCanvas(0, gy);
+    ctx.beginPath();
+    ctx.moveTo(0, p.cy);
+    ctx.lineTo(w, p.cy);
+    ctx.stroke();
+  }
+
+  // Draw trail as cyan polyline
+  if (drState.trail.length > 1) {
+    ctx.strokeStyle = '#0ff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const p0 = toCanvas(drState.trail[0].x, drState.trail[0].y);
+    ctx.moveTo(p0.cx, p0.cy);
+    for (let i = 1; i < drState.trail.length; i++) {
+      const p = toCanvas(drState.trail[i].x, drState.trail[i].y);
+      ctx.lineTo(p.cx, p.cy);
+    }
+    ctx.stroke();
+  }
+
+  // Draw current position dot
+  const cur = toCanvas(drState.x, drState.y);
+  ctx.fillStyle = '#0f0';
+  ctx.beginPath();
+  ctx.arc(cur.cx, cur.cy, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Draw heading arrow
+  const yaw = (sensor.yaw || 0) * Math.PI / 180;
+  const arrowLen = 12;
+  const ax = cur.cx + Math.sin(yaw) * arrowLen;
+  const ay = cur.cy - Math.cos(yaw) * arrowLen;
+  ctx.strokeStyle = '#fa0';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cur.cx, cur.cy);
+  ctx.lineTo(ax, ay);
+  ctx.stroke();
+  // Arrowhead
+  const headLen = 4;
+  const headAngle = Math.atan2(ay - cur.cy, ax - cur.cx);
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(ax - headLen * Math.cos(headAngle - 0.5), ay - headLen * Math.sin(headAngle - 0.5));
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(ax - headLen * Math.cos(headAngle + 0.5), ay - headLen * Math.sin(headAngle + 0.5));
+  ctx.stroke();
+
+  // Scale bar (bottom-left)
+  const scaleBarWorld = gridStep;
+  const scaleBarPx = scaleBarWorld * scale;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(8, h - 10);
+  ctx.lineTo(8 + scaleBarPx, h - 10);
+  ctx.stroke();
+  // End ticks
+  ctx.beginPath();
+  ctx.moveTo(8, h - 14);
+  ctx.lineTo(8, h - 6);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(8 + scaleBarPx, h - 14);
+  ctx.lineTo(8 + scaleBarPx, h - 6);
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = '9px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${scaleBarWorld.toFixed(scaleBarWorld >= 1 ? 0 : 1)}m`, 8, h - 16);
+
+  // Coordinate display (bottom-right)
+  ctx.fillStyle = '#8cf';
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'right';
+  ctx.fillText(`x:${drState.x.toFixed(1)}m y:${drState.y.toFixed(1)}m`, w - 6, h - 6);
+}
+
+function gridInterval(rangeX, rangeY) {
+  const maxRange = Math.max(rangeX, rangeY);
+  if (maxRange <= 2) return 0.5;
+  if (maxRange <= 5) return 1;
+  if (maxRange <= 20) return 2;
+  if (maxRange <= 50) return 5;
+  return 10;
+}
+
+function resetDR() {
+  drState.x = 0;
+  drState.y = 0;
+  drState.vx = 0;
+  drState.vy = 0;
+  drState.trail = [];
+  drState.lastTime = null;
 }

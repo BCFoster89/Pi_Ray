@@ -224,6 +224,25 @@ button.active {
   animation: pulse-leak 1s infinite;
 }
 
+/* Dead Reckoning Map */
+#drMapCanvas {
+  width: 100%;
+  height: 150px;
+  display: block;
+  border-radius: 6px;
+}
+
+.dr-controls {
+  display: flex;
+  margin-top: 4px;
+}
+
+.dr-controls button {
+  flex: 1;
+  font-size: 10px;
+  padding: 3px 6px;
+}
+
 /* Responsive: even narrower on small screens */
 @media (max-width: 800px) {
   #controls-right { width: 150px; gap: 6px; right: 6px; top: 6px; }
