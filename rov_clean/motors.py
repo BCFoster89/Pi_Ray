@@ -4,7 +4,7 @@ import threading
 import RPi.GPIO as GPIO
 from gpiozero import PWMOutputDevice
 from logger import log
-from config import (motor_pins, horizontal_pins, descend_pins, ascend_pins,
+from config import (motor_pins, horizontal_pins, descend_pins,
                     MOTOR_GROUPS, MAX_ACTIVE_GROUPS, GROUP_STAGGER_S,
                     MIN_ACTIVATE_INTERVAL_S, THRUST_MIX, DESCEND_MIX, ASCEND_MIX,
                     PWM_CONFIG, pwm_state)
@@ -73,15 +73,23 @@ class PWMMotorController:
         self.descend_value = 0.0
         self.ascend_value = 0.0
 
+        # E-stop latch: when True, all motor commands are refused until
+        # explicitly released. This is NOT a momentary switch.
+        self.estop_locked = False
+
+        # Heartbeat tracking: last time a heartbeat was received from controller
+        self.last_heartbeat_time = 0.0
+
         # Configuration
         self.frequency = PWM_CONFIG['frequency']
         self.deadband = PWM_CONFIG['deadband']
         self.ramp_rate = PWM_CONFIG['ramp_rate']
         self.stagger_delay = PWM_CONFIG['stagger_delay']
         self.watchdog_timeout = PWM_CONFIG['watchdog_timeout']
+        self.heartbeat_timeout = PWM_CONFIG['heartbeat_timeout']
 
     def initialize(self):
-        """Initialize PWM devices. Called lazily on first use."""
+        """Initialize PWM devices and start watchdog. Called lazily on first use."""
         if self.initialized:
             return
 
@@ -95,7 +103,7 @@ class PWMMotorController:
             for p in self.REAL_PINS:
                 try:
                     GPIO.output(p, GPIO.LOW)
-                except:
+                except Exception:
                     pass
 
             # Initialize PWM devices for each real motor pin (skip placeholders)
@@ -113,6 +121,59 @@ class PWMMotorController:
 
             self.initialized = True
             log("[PWM] PWM motor controller ready")
+
+            # Start watchdog thread
+            watchdog = threading.Thread(target=self._watchdog_loop, daemon=True)
+            watchdog.start()
+            log("[PWM] Watchdog thread started")
+
+    def _watchdog_loop(self):
+        """Background thread that checks for communication loss and heartbeat timeout."""
+        while True:
+            try:
+                self._check_watchdog()
+                self._check_heartbeat()
+            except Exception as e:
+                log(f"[PWM] Watchdog error: {e}")
+            time.sleep(0.15)
+
+    def _check_watchdog(self):
+        """Stop motors if no PWM command received within timeout."""
+        with self.lock:
+            if self.last_command_time > 0 and not self.estop_locked:
+                elapsed = time.time() - self.last_command_time
+                if elapsed > self.watchdog_timeout:
+                    if any(self.current_duties[p] > 0 for p in self.REAL_PINS):
+                        log(f"[PWM] Watchdog timeout ({elapsed:.2f}s) - stopping motors")
+                        self._zero_all_motors()
+
+    def _check_heartbeat(self):
+        """Stop motors if no heartbeat received within timeout."""
+        with self.lock:
+            if self.last_heartbeat_time > 0 and not self.estop_locked:
+                elapsed = time.time() - self.last_heartbeat_time
+                if elapsed > self.heartbeat_timeout:
+                    if any(self.current_duties[p] > 0 for p in self.REAL_PINS):
+                        log(f"[PWM] Heartbeat timeout ({elapsed:.2f}s) - stopping motors")
+                        self._zero_all_motors()
+
+    def _zero_all_motors(self):
+        """Zero all motor outputs. Must be called with self.lock held."""
+        for pin in motor_pins:
+            self.current_duties[pin] = 0.0
+            self.target_duties[pin] = 0.0
+            if pin in self.pwm_devices:
+                self.pwm_devices[pin].value = 0.0
+        self.descend_value = 0.0
+        self.ascend_value = 0.0
+        pwm_state['duties'] = {p: 0.0 for p in motor_pins}
+        pwm_state['active'] = False
+        pwm_state['last_update'] = time.time()
+
+    def record_heartbeat(self):
+        """Record that a heartbeat was received from the controller."""
+        with self.lock:
+            self.last_heartbeat_time = time.time()
 
     def apply_deadband(self, value):
         """Apply deadband to input value."""
@@ -139,19 +200,15 @@ class PWMMotorController:
         duties = {}
 
         # Horizontal thrusters (unidirectional - only positive duty cycle)
-        # Only surge/sway/yaw affect these - NOT descend/ascend
         for pin, (s_mix, w_mix, y_mix) in THRUST_MIX.items():
-            # Calculate raw thrust contribution
             raw = surge * s_mix + sway * w_mix + yaw * y_mix
-            # Unidirectional motors: clamp to 0-1 range
-            # Negative values mean "this motor doesn't contribute in this direction"
             duties[pin] = max(0.0, min(1.0, raw))
 
         # Descend motors (left trigger) - pins 6, 20
         for pin, mix in DESCEND_MIX.items():
             duties[pin] = max(0.0, min(1.0, descend * mix))
 
-        # Ascend motors (right trigger) - pins 1, 2 (placeholders)
+        # Ascend motors (right trigger) - pins 1, 2 (placeholders, not wired)
         for pin, mix in ASCEND_MIX.items():
             duties[pin] = max(0.0, min(1.0, ascend * mix))
 
@@ -171,18 +228,14 @@ class PWMMotorController:
     def set_thrust_vector(self, surge, sway, yaw, descend, ascend):
         """
         Set the thrust vector for the ROV.
-
-        Args:
-            surge:   -1.0 to +1.0 (forward/back from left stick Y)
-            sway:    -1.0 to +1.0 (strafe from left stick X)
-            yaw:     -1.0 to +1.0 (rotation from right stick X)
-            descend: 0.0 to 1.0 (left trigger - descend intensity)
-            ascend:  0.0 to 1.0 (right trigger - ascend intensity)
-
-        Returns:
-            dict of current duty cycles
+        Returns zeros immediately if E-stop is engaged.
         """
         self.initialize()
+
+        # Check E-stop FIRST — refuse all commands while locked
+        with self.lock:
+            if self.estop_locked:
+                return {p: 0.0 for p in motor_pins}
 
         # Apply deadband to inputs
         surge = self.apply_deadband(surge)
@@ -191,27 +244,34 @@ class PWMMotorController:
         descend = self.apply_deadband(descend)
         ascend = self.apply_deadband(ascend)
 
-        # Calculate target duty cycles
+        # Calculate target duty cycles OUTSIDE the lock
         target_duties = self.calculate_motor_duties(surge, sway, yaw, descend, ascend)
 
+        # Calculate smoothed values OUTSIDE the lock
+        smoothed_duties = {}
+        for pin in self.REAL_PINS:
+            target = target_duties.get(pin, 0.0)
+            smoothed_duties[pin] = self.smooth_duty(pin, target)
+
+        # Apply to hardware INSIDE the lock — no sleeps
         with self.lock:
+            # Re-check E-stop in case it was engaged between the two lock acquisitions
+            if self.estop_locked:
+                return {p: 0.0 for p in motor_pins}
+
             self.last_command_time = time.time()
 
             # Store vertical thrust values for UI display
             self.descend_value = descend
             self.ascend_value = ascend
 
-            # Apply smoothing and update motors with stagger delay (only real pins)
+            # Apply smoothed duties to hardware (no stagger delay under lock)
             for pin in self.REAL_PINS:
-                target = target_duties.get(pin, 0.0)
-                smoothed = self.smooth_duty(pin, target)
-
-                # Only update if changed significantly
-                if abs(smoothed - self.current_duties[pin]) > 0.01:
-                    self.current_duties[pin] = smoothed
+                new_duty = smoothed_duties[pin]
+                if abs(new_duty - self.current_duties[pin]) > 0.01:
+                    self.current_duties[pin] = new_duty
                     if pin in self.pwm_devices:
-                        self.pwm_devices[pin].value = smoothed
-                    time.sleep(self.stagger_delay)
+                        self.pwm_devices[pin].value = new_duty
 
             # Update shared state (include all pins for UI display)
             pwm_state['duties'] = self.current_duties.copy()
@@ -222,36 +282,35 @@ class PWMMotorController:
         return self.current_duties.copy()
 
     def emergency_stop(self):
-        """Immediately stop all motors."""
+        """Immediately stop all motors and LATCH the E-stop.
+        Motors will not respond to commands until estop_release() is called."""
         self.initialize()
 
         with self.lock:
-            log("[PWM] EMERGENCY STOP")
-            for pin in motor_pins:
-                self.current_duties[pin] = 0.0
-                self.target_duties[pin] = 0.0
-                if pin in self.pwm_devices:
-                    self.pwm_devices[pin].value = 0.0
+            self.estop_locked = True
+            log("[PWM] EMERGENCY STOP - LATCHED (motors locked off)")
+            self._zero_all_motors()
 
-            # Reset vertical thrust values
-            self.descend_value = 0.0
-            self.ascend_value = 0.0
+    def estop_release(self):
+        """Release the E-stop latch, allowing motor commands again."""
+        with self.lock:
+            if not self.estop_locked:
+                return False
+            self.estop_locked = False
+            # Reset command time so watchdog doesn't immediately fire
+            self.last_command_time = time.time()
+            self.last_heartbeat_time = time.time()
+            log("[PWM] E-STOP RELEASED - motors unlocked")
+            return True
 
-            # Update shared state
-            pwm_state['duties'] = {p: 0.0 for p in motor_pins}
-            pwm_state['active'] = False
-            pwm_state['last_update'] = time.time()
+    def get_estop_state(self):
+        """Return whether E-stop is currently engaged."""
+        with self.lock:
+            return self.estop_locked
 
     def check_watchdog(self):
-        """Check if watchdog has timed out. Call periodically."""
-        if self.last_command_time > 0:
-            elapsed = time.time() - self.last_command_time
-            if elapsed > self.watchdog_timeout:
-                if any(d > 0 for d in self.current_duties.values()):
-                    log(f"[PWM] Watchdog timeout ({elapsed:.2f}s) - stopping motors")
-                    self.emergency_stop()
-                    return True
-        return False
+        """Legacy method - watchdog now runs in background thread."""
+        pass
 
     def get_status(self):
         """Get current PWM status."""
@@ -262,7 +321,8 @@ class PWMMotorController:
                 'ascend': self.ascend_value,
                 'active': any(d > 0 for d in self.current_duties.values()),
                 'last_update': self.last_command_time,
-                'control_mode': pwm_state['control_mode']
+                'control_mode': pwm_state['control_mode'],
+                'estop_locked': self.estop_locked
             }
 
     def cleanup(self):
@@ -272,7 +332,7 @@ class PWMMotorController:
                 try:
                     device.value = 0
                     device.close()
-                except:
+                except Exception:
                     pass
             self.pwm_devices.clear()
             self.initialized = False

@@ -20,6 +20,10 @@
         <button id="statusBtn">Pi: UNKNOWN</button>
         <button id="leakBtn" class="leak-ok">HULL: OK</button>
       </div>
+      <div class="status-row" style="margin-top:4px;">
+        <span id="latencyIndicator" class="latency-indicator">--ms</span>
+        <span id="sensorStatus" class="sensor-indicator">SENSORS: --</span>
+      </div>
     </div>
 
     <div class="card hud-card" id="telemetryCard">
@@ -88,6 +92,7 @@
         <button id="captureBtn" onclick="captureImage()">Capture</button>
       </div>
       <div id="recordingStatus" class="recording-status"></div>
+      <div id="captureStatus" class="capture-status"></div>
     </div>
 
     <div class="card hud-card">
@@ -123,7 +128,7 @@
       </div>
     </div>
 
-    <button class="emergency-stop" onclick="emergencyStop()">ALL STOP</button>
+    <button class="emergency-stop" id="estopBtn" onclick="emergencyStop()">ALL STOP</button>
   </div>
 
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>

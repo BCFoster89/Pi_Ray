@@ -15,6 +15,9 @@ from camera_module import (
 )
 from depth_hold import depth_controller
 
+# Wire depth hold to respect E-stop state (avoids circular import)
+depth_controller.set_estop_check(pwm_motor.get_estop_state)
+
 # This function will be called by main.py to attach routes to the Flask app.
 def init_app(app):
 
@@ -27,10 +30,12 @@ def init_app(app):
     def status():
         return jsonify({'sensor': sensor_data})
 
-    
+
 
     @app.route("/heartbeat")
     def heartbeat():
+        # Record heartbeat time so the watchdog knows the controller is alive
+        pwm_motor.record_heartbeat()
         return "OK"
 
 
@@ -41,11 +46,17 @@ def init_app(app):
 # inside init_app(app) alongside other routes
     @app.route("/motor/all_stop")
     def motor_all_stop():
-        # Stop PWM motors first
+        # Stop PWM motors first (this LATCHES the E-stop)
         try:
             pwm_motor.emergency_stop()
         except Exception as e:
             log(f"[MOTOR] PWM emergency stop failed: {e}")
+
+        # Disable depth hold so PID doesn't fight the E-stop
+        try:
+            depth_controller.disable()
+        except Exception as e:
+            log(f"[MOTOR] Depth hold disable failed during E-stop: {e}")
 
         # Also turn off any legacy groups currently reported as "on"
         stopped = []
@@ -58,8 +69,22 @@ def init_app(app):
                         stopped.append(name)
                 except Exception as e:
                     log(f"[MOTOR] failed stopping {name}: {e}")
-        return jsonify({"stopped": stopped, "pwm_stopped": True})
-    
+        return jsonify({"stopped": stopped, "pwm_stopped": True, "estop_locked": True})
+
+    @app.route("/motor/estop_release", methods=["POST"])
+    def estop_release():
+        """Release the E-stop latch. Requires explicit action — not automatic."""
+        released = pwm_motor.estop_release()
+        if released:
+            return jsonify({"success": True, "estop_locked": False})
+        else:
+            return jsonify({"success": False, "message": "E-stop was not engaged"})
+
+    @app.route("/motor/estop_status")
+    def estop_status():
+        """Return current E-stop state for UI polling."""
+        return jsonify({"estop_locked": pwm_motor.get_estop_state()})
+
     @app.route("/toggle_led")
     def toggle_led():
         # Update LED state in config module
@@ -91,6 +116,9 @@ def init_app(app):
                 # Expected gravity vector along Z axis in body frame (1g downward)
                 expected = {'x': 0.0, 'y': 0.0, 'z': 1.0}
 
+                # Note: sensor_data values may be up to one sensor cycle (50ms) stale
+                # since sensor_data is updated by the sensor thread without cal_lock.
+                # This is acceptable for a one-shot calibration operation.
                 ax = sensor_data['accel_x']
                 ay = sensor_data['accel_y']
                 az = sensor_data['accel_z']
@@ -158,6 +186,7 @@ def init_app(app):
         }
 
         When depth hold is enabled, descend/ascend values are overridden by PID output.
+        Returns zeros immediately if E-stop is engaged.
         """
         try:
             data = request.get_json()
@@ -184,12 +213,14 @@ def init_app(app):
                 ascend = pid_ascend
 
             # Set thrust vector and get resulting duty cycles
+            # (returns zeros if E-stop is engaged)
             duties = pwm_motor.set_thrust_vector(surge, sway, yaw, descend, ascend)
 
             return jsonify({
                 "success": True,
                 "duties": {str(k): round(v, 3) for k, v in duties.items()},
-                "depth_hold_active": depth_controller.enabled
+                "depth_hold_active": depth_controller.enabled,
+                "estop_locked": pwm_motor.get_estop_state()
             })
 
         except Exception as e:
@@ -207,7 +238,8 @@ def init_app(app):
                 "ascend": round(status['ascend'], 3),
                 "active": status['active'],
                 "last_update": status['last_update'],
-                "control_mode": status['control_mode']
+                "control_mode": status['control_mode'],
+                "estop_locked": status['estop_locked']
             })
         except Exception as e:
             log(f"[PWM] Error getting PWM status: {e}")
@@ -298,6 +330,10 @@ def init_app(app):
     def depth_hold_enable():
         """Enable depth hold at current depth."""
         try:
+            # Don't allow depth hold while E-stop is engaged
+            if pwm_motor.get_estop_state():
+                return jsonify({"success": False, "error": "Cannot enable depth hold while E-stop is engaged"}), 400
+
             depth_controller.enable()
             status = depth_controller.get_status()
             return jsonify({"success": True, "status": status})
@@ -322,7 +358,7 @@ def init_app(app):
 
     @app.route("/depth_hold/tune", methods=["POST"])
     def depth_hold_tune():
-        """Adjust PID gains."""
+        """Adjust PID gains with bounds checking."""
         try:
             data = request.get_json()
             if not data:
@@ -332,14 +368,31 @@ def init_app(app):
             ki = data.get('ki')
             kd = data.get('kd')
 
-            depth_controller.set_gains(
-                kp=float(kp) if kp is not None else None,
-                ki=float(ki) if ki is not None else None,
-                kd=float(kd) if kd is not None else None
-            )
+            # Validate PID gain ranges to prevent dangerous oscillation
+            PID_LIMITS = {'kp': (0.0, 5.0), 'ki': (0.0, 2.0), 'kd': (0.0, 5.0)}
+            errors = []
+            if kp is not None:
+                kp = float(kp)
+                lo, hi = PID_LIMITS['kp']
+                if not (lo <= kp <= hi):
+                    errors.append(f"Kp must be {lo}-{hi}, got {kp}")
+            if ki is not None:
+                ki = float(ki)
+                lo, hi = PID_LIMITS['ki']
+                if not (lo <= ki <= hi):
+                    errors.append(f"Ki must be {lo}-{hi}, got {ki}")
+            if kd is not None:
+                kd = float(kd)
+                lo, hi = PID_LIMITS['kd']
+                if not (lo <= kd <= hi):
+                    errors.append(f"Kd must be {lo}-{hi}, got {kd}")
+
+            if errors:
+                return jsonify({"error": "; ".join(errors)}), 400
+
+            depth_controller.set_gains(kp=kp, ki=ki, kd=kd)
 
             return jsonify({"success": True, "status": depth_controller.get_status()})
         except Exception as e:
             log(f"[DEPTH] Tune error: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
-

@@ -18,6 +18,9 @@ current_recording_file = None
 encoder = None
 output = None
 
+# Camera busy flag — True when switching modes (still capture)
+camera_busy = False
+
 # Directories for saved files
 RECORDINGS_DIR = os.path.join(os.path.dirname(__file__), 'recordings')
 IMAGES_DIR = os.path.join(os.path.dirname(__file__), 'images')
@@ -95,14 +98,14 @@ def add_telemetry_overlay(filepath):
 
         # Format telemetry string
         telemetry_text = (
-            f"Depth: {depth:.1f} ft  |  Pitch: {pitch:.1f}°  |  Roll: {roll:.1f}°  |  "
-            f"Heading: {heading:.0f}°  |  Water: {water_temp:.1f}°F  |  {timestamp}"
+            f"Depth: {depth:.1f} ft  |  Pitch: {pitch:.1f}\u00B0  |  Roll: {roll:.1f}\u00B0  |  "
+            f"Heading: {heading:.0f}\u00B0  |  Water: {water_temp:.1f}\u00B0F  |  {timestamp}"
         )
 
         # Try to use a monospace font, fall back to default
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 36)
-        except:
+        except (IOError, OSError):
             font = ImageFont.load_default()
 
         # Calculate text size and position
@@ -145,11 +148,14 @@ def capture_still():
     """
     Capture a high-resolution still image with telemetry overlay.
     Returns the filename of the saved image.
+    Sets camera_busy flag during the mode switch.
     """
-    global picam2
+    global picam2, camera_busy
 
     with camera_lock:
         try:
+            camera_busy = True
+
             # Get current depth for filename
             depth = sensor_data.get('depth_ft', 0.0)
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -187,12 +193,14 @@ def capture_still():
                 # Re-enable autofocus
                 try:
                     picam2.set_controls({"AfMode": 2, "AfSpeed": 1})
-                except:
+                except Exception:
                     pass
 
+                camera_busy = False
                 return filename
             else:
                 log("[CAM] Camera not initialized for still capture")
+                camera_busy = False
                 return None
 
         except Exception as e:
@@ -207,8 +215,9 @@ def capture_still():
                     )
                     picam2.configure(vc)
                     picam2.start()
-            except:
-                pass
+            except Exception as recovery_err:
+                log(f"[CAM] Recovery failed: {recovery_err}")
+            camera_busy = False
             return None
 
 def start_recording():
@@ -301,7 +310,8 @@ def get_recording_status():
         "recording": recording,
         "filename": current_recording_file,
         "elapsed_seconds": round(elapsed, 1),
-        "ffmpeg_available": FFMPEG_AVAILABLE
+        "ffmpeg_available": FFMPEG_AVAILABLE,
+        "camera_busy": camera_busy
     }
 
 def list_recordings():
@@ -314,7 +324,8 @@ def list_recordings():
                 size_mb = os.path.getsize(filepath) / 1024 / 1024
                 files.append({"name": f, "size_mb": round(size_mb, 1)})
         return sorted(files, key=lambda x: x['name'], reverse=True)
-    except:
+    except OSError as e:
+        log(f"[CAM] Failed to list recordings: {e}")
         return []
 
 def list_images():
@@ -322,5 +333,6 @@ def list_images():
     try:
         files = os.listdir(IMAGES_DIR)
         return sorted([f for f in files if f.endswith('.jpg')], reverse=True)
-    except:
+    except OSError as e:
+        log(f"[CAM] Failed to list images: {e}")
         return []

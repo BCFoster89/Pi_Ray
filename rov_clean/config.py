@@ -1,13 +1,17 @@
 # config.py
 import RPi.GPIO as GPIO
+from logger import log
 
 # Hardware config
 # Horizontal thrusters: 8, 12, 13, 16
-# Vertical thrusters: 6, 20 (descend), 1, 2 (ascend - placeholder pins)
+# Vertical thrusters: 6, 20 (descend only — ascend hardware not installed)
 horizontal_pins = [8, 12, 13, 16]
 descend_pins = [6, 20]
-ascend_pins = [1, 2]  # PLACEHOLDER - will control same motors as descend but reversed
-motor_pins = horizontal_pins + descend_pins + ascend_pins
+# ascend_pins = []  # NOT INSTALLED — assign real GPIO pins when hardware is added
+ASCEND_INSTALLED = False
+
+# motor_pins only includes pins that physically exist on the board
+motor_pins = horizontal_pins + descend_pins
 
 led_pin = 24
 led_state = False
@@ -24,7 +28,6 @@ MOTOR_GROUPS = {
     'left_trigger': [12, 16],
     'right_trigger': [8, 13],
     'descend': [6, 20],
-    'ascend': [1, 2]  # PLACEHOLDER
 }
 motor_states = {name: "off" for name in MOTOR_GROUPS}
 
@@ -42,7 +45,8 @@ PWM_CONFIG = {
     'deadband': 0.05,       # Ignore inputs below 5%
     'ramp_rate': 0.15,      # Max duty cycle change per update (prevents voltage spikes)
     'stagger_delay': 0.05,  # Delay between motor updates to prevent inrush current
-    'watchdog_timeout': 0.5 # Stop motors if no command received in 500ms
+    'watchdog_timeout': 0.5,# Stop motors if no command received in 500ms
+    'heartbeat_timeout': 2.0# Stop motors if no heartbeat received in 2s
 }
 
 # Thruster layout (based on motor groups analysis):
@@ -56,7 +60,7 @@ PWM_CONFIG = {
 #
 # Vertical thrusters:
 #   Descend: pins 6, 20
-#   Ascend:  pins 1, 2 (PLACEHOLDER - same motors, reversed direction)
+#   Ascend:  NOT INSTALLED — assign real pins when hardware is added
 
 # Thrust mixing matrix for horizontal thrusters
 # Each motor's contribution to surge (forward/back), sway (strafe), yaw (rotation)
@@ -74,19 +78,15 @@ THRUST_MIX = {
     13: [-1.0, +1.0, +1.0],  # Rear-Right: backward, strafe-right, turn-right
 }
 
-# Vertical thrust mixing - SEPARATE descend and ascend
+# Vertical thrust mixing - descend only (ascend not installed)
 # Descend motors (left trigger) - pins 6, 20
 DESCEND_MIX = {
     6:  1.0,   # Descend motor 1
     20: 1.0,   # Descend motor 2
 }
 
-# Ascend motors (right trigger) - pins 1, 2 (PLACEHOLDER)
-# These will be the same physical motors as descend but with reversed direction
-ASCEND_MIX = {
-    1: 1.0,   # Ascend motor 1 (PLACEHOLDER)
-    2: 1.0,   # Ascend motor 2 (PLACEHOLDER)
-}
+# Ascend motors — empty until hardware is installed
+ASCEND_MIX = {}
 
 # Current PWM state (duty cycles for each motor, 0.0-1.0)
 pwm_state = {
@@ -102,7 +102,8 @@ sensor_data = {
     'accel_x': 0.0, 'accel_y': 0.0, 'accel_z': 0.0,
     'gyro_x': 0.0, 'gyro_y': 0.0, 'gyro_z': 0.0,
     'imu_temp_f': 0.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
-    'leak_detected': False
+    'leak_detected': False,
+    'sensor_ok': False  # Set True once sensor loop is running successfully
 }
 
 # GPIO setup (run at import)
@@ -112,7 +113,10 @@ GPIO.setup(led_pin, GPIO.OUT)
 GPIO.output(led_pin, GPIO.LOW)
 # Leak sensor - input with pull-up (active LOW when wet)
 GPIO.setup(leak_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-# Only setup pins that exist on the Pi (skip placeholder pins 1, 2)
+# Setup only real motor pins
 for p in horizontal_pins + descend_pins:
     GPIO.setup(p, GPIO.OUT)
     GPIO.output(p, GPIO.LOW)
+
+if not ASCEND_INSTALLED:
+    log("[CONFIG] Ascend motors not configured — right trigger input ignored")

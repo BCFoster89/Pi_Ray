@@ -78,7 +78,7 @@ html, body {
 
 #logs {
   margin-top: auto;    /* Optional: Keeps short logs pinned to the bottom */
-  white-space: pre-wrap; 
+  white-space: pre-wrap;
   word-wrap: break-word;
 }
 
@@ -186,6 +186,42 @@ button.active {
 @keyframes pulse-leak {
   0%, 100% { background-color: #e74c3c; }
   50% { background-color: #c0392b; }
+}
+
+/* Latency and sensor status indicators */
+.latency-indicator {
+  flex: 1;
+  font-size: 10px;
+  padding: 3px 4px;
+  text-align: center;
+  border-radius: 3px;
+  background: rgba(0, 40, 80, 0.5);
+  color: #0f0;
+  font-family: "Courier New", monospace;
+}
+
+.latency-indicator.warn {
+  color: #ff0;
+}
+
+.latency-indicator.bad {
+  color: #f44;
+}
+
+.sensor-indicator {
+  flex: 1;
+  font-size: 10px;
+  padding: 3px 4px;
+  text-align: center;
+  border-radius: 3px;
+  background: rgba(0, 40, 80, 0.5);
+  color: #0f0;
+  font-family: "Courier New", monospace;
+}
+
+.sensor-indicator.offline {
+  color: #f44;
+  animation: pulse-leak 1s infinite;
 }
 
 /* Responsive: even narrower on small screens */
@@ -296,16 +332,6 @@ button.active {
   gap: 4px;
 }
 
-/* Ascend section - placeholder pins (not yet configured) */
-.vertical-thrusters.ascend-section {
-  background: rgba(80, 40, 0, 0.2);
-  border: 1px dashed rgba(255, 165, 0, 0.3);
-}
-
-.vertical-thrusters.ascend-section .thruster-label {
-  color: #fa0;
-}
-
 .thruster.vertical {
   flex-direction: row;
   align-items: center;
@@ -340,7 +366,10 @@ button.active {
   background: linear-gradient(90deg, #c40, #f80);
 }
 
-/* Emergency stop button */
+/* =============================================================================
+   EMERGENCY STOP STYLES
+   ============================================================================= */
+
 .emergency-stop {
   width: 100%;
   margin-top: 8px;
@@ -361,6 +390,19 @@ button.active {
 
 .emergency-stop:active {
   background: #f00;
+}
+
+/* E-stop latched state — persistent pulsing red */
+.emergency-stop.estop-active {
+  background: #f00;
+  border-color: #f44;
+  animation: pulse-estop 0.8s infinite;
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
+}
+
+@keyframes pulse-estop {
+  0%, 100% { background: #f00; box-shadow: 0 0 20px rgba(255, 0, 0, 0.8); }
+  50% { background: #c00; box-shadow: 0 0 10px rgba(255, 0, 0, 0.4); }
 }
 
 /* Control mode indicator */
@@ -411,6 +453,13 @@ button.active {
   margin-top: 4px;
   font-size: 11px;
   color: #f88;
+  text-align: center;
+}
+
+.capture-status {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #8f8;
   text-align: center;
 }
 

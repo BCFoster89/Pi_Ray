@@ -2,12 +2,14 @@
 """
 PID-based depth hold controller for ROV.
 Uses pressure sensor depth reading as input and controls descend/ascend motors.
+Respects E-stop state — outputs zero when E-stop is engaged.
 """
 
 import time
 import threading
 from logger import log
 from config import sensor_data
+
 
 class DepthHoldController:
     """
@@ -44,6 +46,14 @@ class DepthHoldController:
         # Current output values
         self.descend_output = 0.0
         self.ascend_output = 0.0
+
+        # E-stop callback: set by routes.py to check E-stop state
+        # This avoids a circular import (depth_hold -> motors -> config -> ...)
+        self._estop_check_fn = None
+
+    def set_estop_check(self, fn):
+        """Register a function that returns True if E-stop is engaged."""
+        self._estop_check_fn = fn
 
     def set_gains(self, kp=None, ki=None, kd=None):
         """Update PID gains."""
@@ -114,6 +124,12 @@ class DepthHoldController:
         """Calculate PID output based on current depth error."""
         with self._lock:
             if not self.enabled:
+                return
+
+            # If E-stop is engaged, zero outputs and wait
+            if self._estop_check_fn and self._estop_check_fn():
+                self.descend_output = 0.0
+                self.ascend_output = 0.0
                 return
 
             # Get current depth

@@ -1,3 +1,61 @@
+// === E-STOP STATE ===
+let estopLocked = false;
+
+// Poll E-stop state from server to keep UI in sync
+async function pollEstopStatus() {
+  try {
+    let r = await fetch('/motor/estop_status', { cache: "no-store" });
+    let data = await r.json();
+    estopLocked = data.estop_locked;
+    updateEstopUI();
+  } catch (e) {
+    // Silently fail — covered by heartbeat
+  }
+}
+
+function updateEstopUI() {
+  const btn = document.getElementById('estopBtn');
+  if (estopLocked) {
+    btn.textContent = 'E-STOP ACTIVE — Click to Release';
+    btn.classList.add('estop-active');
+  } else {
+    btn.textContent = 'ALL STOP';
+    btn.classList.remove('estop-active');
+  }
+}
+
+function emergencyStop() {
+  if (estopLocked) {
+    // If already locked, clicking releases it
+    fetch('/motor/estop_release', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          estopLocked = false;
+          updateEstopUI();
+          // Flash green to confirm release
+          document.body.style.boxShadow = 'inset 0 0 60px rgba(0, 255, 0, 0.4)';
+          setTimeout(() => { document.body.style.boxShadow = 'none'; }, 300);
+        }
+      })
+      .catch(console.error);
+  } else {
+    // Engage E-stop
+    fetch('/motor/all_stop')
+      .then(r => r.json())
+      .then(d => {
+        estopLocked = true;
+        updateEstopUI();
+        // Flash red to confirm
+        document.body.style.boxShadow = 'inset 0 0 100px rgba(255, 0, 0, 0.5)';
+        setTimeout(() => { document.body.style.boxShadow = 'none'; }, 300);
+      })
+      .catch(console.error);
+  }
+}
+
+setInterval(pollEstopStatus, 500);
+
 // === PWM THRUSTER STATUS ===
 async function pollPWMStatus() {
   try {
@@ -47,21 +105,6 @@ function updateThrusterDisplay(pin, duty) {
 
 // Poll PWM status at 10Hz for smooth updates
 setInterval(pollPWMStatus, 100);
-
-// === EMERGENCY STOP ===
-function emergencyStop() {
-  fetch('/motor/all_stop')
-    .then(r => r.json())
-    .then(d => {
-      console.log("Emergency stop:", d);
-      // Flash screen to confirm
-      document.body.style.boxShadow = 'inset 0 0 100px rgba(255, 0, 0, 0.5)';
-      setTimeout(() => {
-        document.body.style.boxShadow = 'none';
-      }, 300);
-    })
-    .catch(console.error);
-}
 
 // === BUTTON FUNCTIONS ===
 function toggleMotor(name){
@@ -141,9 +184,10 @@ async function pollRecordingStatus() {
 }
 setInterval(pollRecordingStatus, 1000);
 
-// === STILL CAPTURE ===
+// === STILL CAPTURE (uses separate #captureStatus element) ===
 async function captureImage() {
   const btn = document.getElementById('captureBtn');
+  const captureEl = document.getElementById('captureStatus');
   btn.disabled = true;
   btn.textContent = 'Capturing...';
 
@@ -156,18 +200,18 @@ async function captureImage() {
     let data = await r.json();
 
     if (data.success) {
-      console.log("Image captured:", data.filename);
-      // Show notification
-      const statusEl = document.getElementById('recordingStatus');
-      statusEl.textContent = `Captured: ${data.filename}`;
+      captureEl.textContent = `Captured: ${data.filename}`;
       setTimeout(() => {
-        if (statusEl.textContent.startsWith('Captured:')) {
-          statusEl.textContent = '';
+        if (captureEl.textContent.startsWith('Captured:')) {
+          captureEl.textContent = '';
         }
       }, 3000);
+    } else {
+      captureEl.textContent = `Capture failed: ${data.error || 'unknown'}`;
     }
   } catch (e) {
     console.error("Capture error:", e);
+    captureEl.textContent = 'Capture error';
   }
 
   btn.disabled = false;
@@ -191,6 +235,8 @@ async function toggleDepthHold() {
         btn.classList.add('active');
         btn.textContent = 'Release';
         statusEl.textContent = `Holding: ${data.status.target_depth.toFixed(1)} ft`;
+      } else {
+        statusEl.textContent = data.error || 'Failed';
       }
     } else {
       // Disable depth hold
@@ -220,6 +266,8 @@ async function updatePIDGains() {
     let data = await r.json();
     if (data.success) {
       console.log("PID gains updated:", data.status);
+    } else {
+      alert("PID error: " + (data.error || "unknown"));
     }
   } catch (e) {
     console.error("PID tune error:", e);
@@ -247,10 +295,14 @@ async function pollDepthHoldStatus() {
       btn.textContent = 'Depth Hold';
     }
 
-    // Update PID input fields if they differ
-    document.getElementById('pidKp').value = data.kp;
-    document.getElementById('pidKi').value = data.ki;
-    document.getElementById('pidKd').value = data.kd;
+    // Only update PID input fields if they are NOT currently focused
+    const activeEl = document.activeElement;
+    const kpEl = document.getElementById('pidKp');
+    const kiEl = document.getElementById('pidKi');
+    const kdEl = document.getElementById('pidKd');
+    if (activeEl !== kpEl) kpEl.value = data.kp;
+    if (activeEl !== kiEl) kiEl.value = data.ki;
+    if (activeEl !== kdEl) kdEl.value = data.kd;
 
   } catch (e) {
     // Silently fail - server might not support depth hold yet
@@ -258,20 +310,30 @@ async function pollDepthHoldStatus() {
 }
 setInterval(pollDepthHoldStatus, 500);
 
-// === STATUS HEARTBEAT ===
+// === STATUS HEARTBEAT + LATENCY ===
 async function heartbeatLoop(){
   let btn = document.getElementById("statusBtn");
+  const latencyEl = document.getElementById("latencyIndicator");
+  const t0 = performance.now();
   try {
     let r = await fetch('/heartbeat', { cache: "no-store" });
+    const latency = Math.round(performance.now() - t0);
     if (r.ok){
       btn.textContent = "Pi Status: OK";
       btn.classList.remove("lost");
       btn.classList.add("ok");
+      // Update latency display
+      latencyEl.textContent = `${latency}ms`;
+      latencyEl.classList.remove('warn', 'bad');
+      if (latency > 200) latencyEl.classList.add('bad');
+      else if (latency > 80) latencyEl.classList.add('warn');
     } else throw new Error("bad response");
   } catch {
     btn.textContent = "Pi Status: LOST";
     btn.classList.remove("ok");
     btn.classList.add("lost");
+    latencyEl.textContent = "LOST";
+    latencyEl.classList.add('bad');
   }
   setTimeout(heartbeatLoop, 2000);
 }
@@ -287,28 +349,25 @@ async function updateOverlay() {
     // draw HUD
     drawHUD(sensor);
 
-    // update telemetry card
-   // Replace your existing telemetry section with this:
-const telemetryEl = document.getElementById("telemetry");
+    // update telemetry card — heading displayed as integer (aviation convention)
+    const telemetryEl = document.getElementById("telemetry");
 
-// Updated displayOrder to match sensors.py keys
-const displayOrder = [
-  { key: 'depth_ft', label: 'Depth', unit: 'ft' },
-  { key: 'pitch', label: 'Pitch', unit: '°' },
-  { key: 'roll', label: 'Roll', unit: '°' },
-  { key: 'yaw', label: 'Heading', unit: '°' }, // Using 'yaw' for heading
-  { key: 'temperature_f', label: 'Water', unit: '°F' }, // Matches python 'temperature_f'
-  { key: 'imu_temp_f', label: 'Internal', unit: '°F' }  // Matches python 'imu_temp_f'
-];
+    const displayOrder = [
+      { key: 'depth_ft', label: 'Depth', unit: 'ft', decimals: 1 },
+      { key: 'pitch', label: 'Pitch', unit: '\u00B0', decimals: 1 },
+      { key: 'roll', label: 'Roll', unit: '\u00B0', decimals: 1 },
+      { key: 'yaw', label: 'Heading', unit: '\u00B0', decimals: 0 },
+      { key: 'temperature_f', label: 'Water', unit: '\u00B0F', decimals: 1 },
+      { key: 'imu_temp_f', label: 'Internal', unit: '\u00B0F', decimals: 1 }
+    ];
 
-telemetryEl.textContent = displayOrder
-  .map(item => {
-    const val = sensor[item.key];
-    // Format the number to 1 decimal place if it exists
-    const displayVal = (typeof val === 'number') ? val.toFixed(1) : (val || '0.0');
-    return `${item.label.padEnd(8)}: ${displayVal} ${item.unit}`;
-  })
-  .join('\n');
+    telemetryEl.textContent = displayOrder
+      .map(item => {
+        const val = sensor[item.key];
+        const displayVal = (typeof val === 'number') ? val.toFixed(item.decimals) : (val || '0.0');
+        return `${item.label.padEnd(8)}: ${displayVal} ${item.unit}`;
+      })
+      .join('\n');
 
     // Update leak indicator
     const leakBtn = document.getElementById('leakBtn');
@@ -321,6 +380,18 @@ telemetryEl.textContent = displayOrder
         leakBtn.textContent = 'HULL: OK';
         leakBtn.classList.remove('leak-detected');
         leakBtn.classList.add('leak-ok');
+      }
+    }
+
+    // Update sensor status indicator
+    const sensorEl = document.getElementById('sensorStatus');
+    if (sensorEl) {
+      if (sensor.sensor_ok) {
+        sensorEl.textContent = 'SENSORS: OK';
+        sensorEl.classList.remove('offline');
+      } else {
+        sensorEl.textContent = 'SENSORS: OFFLINE';
+        sensorEl.classList.add('offline');
       }
     }
 
@@ -361,13 +432,12 @@ function drawHUD(sensor){
 
   ctx.clearRect(0,0,canvas.width,canvas.height);
   let cx = canvas.width/2;
-  let cy = canvas.height/2;
 
   // === ARTIFICIAL HORIZON (small circle, top-left) ===
   const ahRadius = 50;  // 100px diameter circle
   const ahX = 80;       // center X position
   const ahY = 120;      // center Y position
-  const pitchScale = 8; // pixels per degree of pitch (increased for sensitivity)
+  const pitchScale = 8; // pixels per degree of pitch
 
   ctx.save();
 
@@ -406,14 +476,13 @@ function drawHUD(sensor){
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
   for (let p = -10; p <= 10; p += 2) {
-    if (p === 0) continue; // Skip horizon line
+    if (p === 0) continue;
     let offset = pitchOffset - p * pitchScale;
-    let lineWidth = (p % 4 === 0) ? 24 : 12; // Longer lines every 4 degrees
+    let lineWidth = (p % 4 === 0) ? 24 : 12;
     ctx.beginPath();
     ctx.moveTo(-lineWidth / 2, offset);
     ctx.lineTo(lineWidth / 2, offset);
     ctx.stroke();
-    // Label every 4 degrees
     if (p % 4 === 0) {
       ctx.fillText(Math.abs(p) + "", lineWidth / 2 + 6, offset + 3);
     }
@@ -446,15 +515,14 @@ function drawHUD(sensor){
   ctx.arc(ahX, ahY, ahRadius, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Draw roll indicator tick marks (every 2 degrees, from -10 to +10)
+  // Draw roll indicator tick marks
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 1;
   for (let r = -10; r <= 10; r += 2) {
     ctx.save();
     ctx.translate(ahX, ahY);
     ctx.rotate(r * Math.PI / 180);
-    // Draw tick mark at top of circle
-    let tickLen = (r % 4 === 0) ? 8 : 4; // Longer ticks every 4 degrees
+    let tickLen = (r % 4 === 0) ? 8 : 4;
     ctx.beginPath();
     ctx.moveTo(0, -ahRadius - 2);
     ctx.lineTo(0, -ahRadius - 2 - tickLen);
@@ -475,37 +543,36 @@ function drawHUD(sensor){
   ctx.fill();
   ctx.restore();
 
-// Heading tape top-center
+  // === HEADING TAPE (top-center) ===
   let heading = sensor.yaw || 0;
+  // Normalize heading to 0-359 for display (integer, aviation convention)
+  let headingDisplay = Math.round(((heading % 360) + 360) % 360);
+
   ctx.fillStyle = "#ff0";
   ctx.font = "bold 16px Arial";
   ctx.textAlign = "center";
-  
-  // 1. Draw the actual digital readout in the center
-  ctx.fillText(`${Math.round((heading + 360) % 360)}°`, cx, 25);
 
-  // 2. Setup the tape
+  // Digital readout (integer heading)
+  ctx.fillText(`${headingDisplay}\u00B0`, cx, 25);
+
+  // Heading tape
   let spacing = 5; // pixels per degree
-  let snapHeading = Math.floor(heading / 10) * 10; // The nearest 10° mark
-  
+  let snapHeading = Math.floor(heading / 10) * 10;
+
   ctx.beginPath();
-  // We draw 9 marks to the left and 9 to the right of our "snapped" heading
+  ctx.strokeStyle = "#ff0";
+  ctx.lineWidth = 1;
   for (let i = -90; i <= 90; i += 10) {
     let mark = snapHeading + i;
-    
-    // Calculate position: (The mark position) - (exact heading)
-    // This creates the smooth sliding effect
     let x = cx + (mark - heading) * spacing;
-    
-    // Wrap the number for display (0-359)
-    let displayMark = (mark + 360) % 360;
+    let displayMark = ((mark % 360) + 360) % 360;
 
     // Draw the tick mark
     ctx.moveTo(x, 45);
     ctx.lineTo(x, 55);
     ctx.stroke();
 
-    // 3. Draw the Label (Cardinal or Number)
+    // Label (cardinal or number)
     const getCardinal = (d) => {
       const directions = {0:"N", 45:"NE", 90:"E", 135:"SE", 180:"S", 225:"SW", 270:"W", 315:"NW"};
       return directions[d] !== undefined ? directions[d] : d;
@@ -516,19 +583,20 @@ function drawHUD(sensor){
     ctx.fillText(label, x, 70);
   }
 
-  // 4. Draw a "Lubber Line" (the center pointer)
-  ctx.strokeStyle = "#f00"; // Red pointer
+  // Lubber line (center pointer)
+  ctx.strokeStyle = "#f00";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(cx, 40);
   ctx.lineTo(cx, 60);
   ctx.stroke();
-  ctx.lineWidth = 1; // Reset for other drawings
-  ctx.strokeStyle = "#ff0"; // Reset to yellow
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#ff0";
 
-  // Depth display (above the artificial horizon circle)
+  // === DEPTH DISPLAY (below artificial horizon to avoid overlap with heading tape) ===
   ctx.fillStyle = "#ff0";
-  ctx.font = "bold 20px Arial";
+  ctx.font = "bold 18px Arial";
   ctx.textAlign = "left";
-  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, 50);
+  // Position below the artificial horizon circle (ahY + ahRadius + margin)
+  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, ahY + ahRadius + 30);
 }

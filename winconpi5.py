@@ -19,7 +19,7 @@ print(f"Controller: {controller.get_name()}")
 print(f"Axes: {controller.get_numaxes()}, Buttons: {controller.get_numbuttons()}")
 
 # Flask server base URL (replace with your Pi's IP if needed)
-BASE_URL = "http://192.168.1.3:5000"
+BASE_URL = "http://192.168.4.31:5000"
 # BASE_URL = "http://127.0.0.1:5000"    # for local testing
 
 # =============================================================================
@@ -47,11 +47,15 @@ AXIS_MAP = {
 TRIGGER_MIN = 0.0    # Value when trigger is released
 TRIGGER_MAX = 1.0    # Value when trigger is fully pressed
 
-# Button mapping for non-PWM functions
+# Button mapping
 BUTTON_MAP = {
-    7: 'lights',     # Start button → toggle LED
-    6: 'estop',      # Back button → emergency stop
+    7: 'lights',     # Start button -> toggle LED
+    6: 'estop',      # Back button -> emergency stop (LATCH ON)
 }
+
+# E-stop release requires BOTH bumpers pressed simultaneously
+BUMPER_LEFT = 4      # Left bumper (LB)
+BUMPER_RIGHT = 5     # Right bumper (RB)
 
 # =============================================================================
 # CONFIGURATION
@@ -60,6 +64,7 @@ DEADBAND = 0.10           # Ignore inputs below this threshold
 SEND_INTERVAL = 0.05      # 20Hz update rate (50ms)
 SMOOTHING_ALPHA = 0.3     # EMA smoothing factor (0.0-1.0, higher = less smoothing)
 CHANGE_THRESHOLD = 0.02   # Only send if values changed more than this
+HEARTBEAT_INTERVAL = 0.5  # Send heartbeat every 500ms
 
 # =============================================================================
 # STATE TRACKING
@@ -67,6 +72,8 @@ CHANGE_THRESHOLD = 0.02   # Only send if values changed more than this
 last_sent = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
 smoothed = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
 previous_buttons = [0] * controller.get_numbuttons()
+estop_active = False       # Local tracking of E-stop state
+last_heartbeat_time = 0.0  # Last time a heartbeat was sent
 
 
 def apply_deadband(value, deadband=DEADBAND):
@@ -80,7 +87,6 @@ def apply_deadband(value, deadband=DEADBAND):
 def normalize_trigger(raw_value):
     """
     Normalize trigger value from controller range to 0.0-1.0.
-    Your controller: released = -0.5, fully pressed = +0.5
     Output: released = 0.0, fully pressed = 1.0
     """
     # Map from [TRIGGER_MIN, TRIGGER_MAX] to [0, 1]
@@ -110,7 +116,6 @@ def read_axes():
         lt_raw = controller.get_axis(AXIS_MAP['lt'])
         rt_raw = controller.get_axis(AXIS_MAP['rt'])
 
-        # Normalize triggers from [-0.5, +0.5] to [0, 1]
         descend_raw = normalize_trigger(lt_raw)
         ascend_raw = normalize_trigger(rt_raw)
     except (pygame.error, IndexError):
@@ -167,11 +172,41 @@ def send_pwm_command(values):
     return False
 
 
+def send_heartbeat():
+    """Send heartbeat to ROV so the watchdog knows we're alive."""
+    global last_heartbeat_time
+    now = time.time()
+    if now - last_heartbeat_time >= HEARTBEAT_INTERVAL:
+        try:
+            requests.get(f"{BASE_URL}/heartbeat", timeout=0.3)
+            last_heartbeat_time = now
+        except Exception:
+            pass  # Heartbeat failure is non-fatal; watchdog on server handles it
+
+
 def check_buttons():
-    """Handle button presses for lights and emergency stop."""
-    global previous_buttons
+    """Handle button presses for lights, E-stop, and E-stop release."""
+    global previous_buttons, estop_active
     buttons = [controller.get_button(i) for i in range(controller.get_numbuttons())]
 
+    # --- E-STOP RELEASE: Both bumpers pressed simultaneously ---
+    lb_pressed = buttons[BUMPER_LEFT] if BUMPER_LEFT < len(buttons) else 0
+    rb_pressed = buttons[BUMPER_RIGHT] if BUMPER_RIGHT < len(buttons) else 0
+    lb_was = previous_buttons[BUMPER_LEFT] if BUMPER_LEFT < len(previous_buttons) else 0
+    rb_was = previous_buttons[BUMPER_RIGHT] if BUMPER_RIGHT < len(previous_buttons) else 0
+
+    # Detect both bumpers being held simultaneously (rising edge of the combo)
+    if estop_active and lb_pressed and rb_pressed and not (lb_was and rb_was):
+        try:
+            r = requests.post(f"{BASE_URL}/motor/estop_release", timeout=0.5)
+            data = r.json()
+            if data.get('success'):
+                estop_active = False
+                print("\n*** E-STOP RELEASED — motors unlocked ***")
+        except Exception as e:
+            print(f"Error releasing E-stop: {e}")
+
+    # --- Normal button handling ---
     for i, state in enumerate(buttons):
         if i in BUTTON_MAP and state and not previous_buttons[i]:
             action = BUTTON_MAP[i]
@@ -181,8 +216,9 @@ def check_buttons():
                     print(f"Toggled LED: {r.text}")
                 elif action == 'estop':
                     r = requests.get(f"{BASE_URL}/motor/all_stop", timeout=0.5)
-                    print("*** EMERGENCY STOP ***")
-                    # Reset smoothed values to prevent motor restart
+                    estop_active = True
+                    print("\n*** EMERGENCY STOP ENGAGED — press both bumpers to release ***")
+                    # Reset smoothed values
                     for key in smoothed:
                         smoothed[key] = 0.0
             except Exception as e:
@@ -198,7 +234,8 @@ def print_status(values):
     yaw = values['yaw']
     descend = values['descend']
     ascend = values['ascend']
-    print(f"\rSurge: {surge:+.2f} | Sway: {sway:+.2f} | Yaw: {yaw:+.2f} | Desc: {descend:.2f} | Asc: {ascend:.2f}  ", end='')
+    estop_tag = " [E-STOP]" if estop_active else ""
+    print(f"\rSurge: {surge:+.2f} | Sway: {sway:+.2f} | Yaw: {yaw:+.2f} | Desc: {descend:.2f} | Asc: {ascend:.2f}{estop_tag}  ", end='')
 
 
 # =============================================================================
@@ -212,7 +249,8 @@ print("  Left stick X  : Strafe Left / Right (sway)")
 print("  Right stick X : Rotate Left / Right (yaw)")
 print("  Left trigger  : Descend (0-100%)")
 print("  Right trigger : Ascend (0-100%)")
-print("  Back button   : EMERGENCY STOP")
+print("  Back button   : EMERGENCY STOP (latching)")
+print("  LB + RB       : Release E-Stop")
 print("  Start button  : Toggle LED")
 print("=" * 60)
 print(f"Trigger calibration: min={TRIGGER_MIN}, max={TRIGGER_MAX}")
@@ -224,24 +262,30 @@ try:
     while True:
         values = read_axes()
         check_buttons()
+        send_heartbeat()
 
-        # Send update if values changed or enough time has passed
-        now = time.time()
-        if values_changed(values) or (now - last_send_time > 0.25):
-            if send_pwm_command(values):
-                last_send_time = now
-                print_status(values)
+        # Only send motor commands if E-stop is not active
+        # (server also enforces this, but skip the network call entirely)
+        if not estop_active:
+            now = time.time()
+            if values_changed(values) or (now - last_send_time > 0.25):
+                if send_pwm_command(values):
+                    last_send_time = now
+                    print_status(values)
+        else:
+            # While E-stop is active, keep smoothed values at zero
+            for key in smoothed:
+                smoothed[key] = 0.0
 
         time.sleep(SEND_INTERVAL)
 
 except KeyboardInterrupt:
     print("\n\nShutting down...")
-    # Send zero command on exit to stop all motors
+    # Send stop command on exit
     try:
-        zero_cmd = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
-        requests.post(f"{BASE_URL}/motor/pwm", json=zero_cmd, timeout=0.5)
+        requests.get(f"{BASE_URL}/motor/all_stop", timeout=0.5)
         print("Motors stopped.")
-    except:
+    except Exception:
         print("Could not send stop command.")
     print("Controller disconnected.")
 finally:
