@@ -130,7 +130,19 @@ function zeroIMU(){
 }
 
 function toggleLED(){
-  fetch('/toggle_led').then(r => r.text());
+  fetch('/toggle_led')
+    .then(r => r.json())
+    .then(d => {
+      const btn = document.getElementById('ledBtn');
+      if (d.led_on) {
+        btn.classList.add('led-on');
+        btn.textContent = 'LED ON';
+      } else {
+        btn.classList.remove('led-on');
+        btn.textContent = 'Toggle LED';
+      }
+    })
+    .catch(console.error);
 }
 
 // === RECORDING FUNCTIONS ===
@@ -252,6 +264,38 @@ async function toggleDepthHold() {
   } catch (e) {
     console.error("Depth hold error:", e);
     statusEl.textContent = 'Error';
+  }
+}
+
+async function goToDepth() {
+  const input = document.getElementById('targetDepthInput');
+  const depth = parseFloat(input.value);
+  if (isNaN(depth) || depth < 0) {
+    input.style.borderColor = '#f00';
+    setTimeout(() => { input.style.borderColor = ''; }, 1000);
+    return;
+  }
+
+  try {
+    let r = await fetch('/depth_hold/enable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_depth: depth })
+    });
+    let data = await r.json();
+    if (data.success) {
+      depthHoldEnabled = true;
+      const btn = document.getElementById('depthHoldBtn');
+      btn.classList.add('active');
+      btn.textContent = 'Release';
+      const statusEl = document.getElementById('depthHoldStatus');
+      statusEl.textContent = `Target: ${data.status.target_depth.toFixed(1)} ft`;
+    } else {
+      const statusEl = document.getElementById('depthHoldStatus');
+      statusEl.textContent = data.error || 'Failed';
+    }
+  } catch (e) {
+    console.error("Go-to-depth error:", e);
   }
 }
 
@@ -600,12 +644,12 @@ function drawHUD(sensor){
   ctx.lineWidth = 1;
   ctx.strokeStyle = "#ff0";
 
-  // === DEPTH DISPLAY (below artificial horizon to avoid overlap with heading tape) ===
-  ctx.fillStyle = "#ff0";
-  ctx.font = "bold 18px Arial";
+  // === DEPTH DISPLAY (above artificial horizon) ===
+  ctx.fillStyle = "#4af";
+  ctx.font = "bold 24px Arial";
   ctx.textAlign = "left";
-  // Position below the artificial horizon circle (ahY + ahRadius + margin)
-  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, ahY + ahRadius + 30);
+  // Position above the artificial horizon circle top edge
+  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, ahY - ahRadius - 12);
 }
 
 // === DEAD RECKONING ===
@@ -621,20 +665,32 @@ function updateDeadReckoning(sensor) {
   // Clamp dt to avoid large jumps (e.g. tab was backgrounded)
   if (dt <= 0 || dt > 1) return;
 
+  // Read tunable coefficients from DOM inputs
+  const damping = parseFloat(document.getElementById('drDamping').value) || 0.95;
+  const deadzone = parseFloat(document.getElementById('drDeadzone').value) || 0.05;
+  const accelScale = parseFloat(document.getElementById('drAccelScale').value) || 1.0;
+
   const pitch = (sensor.pitch || 0) * Math.PI / 180;
   const roll  = (sensor.roll  || 0) * Math.PI / 180;
   const yaw   = (sensor.yaw   || 0) * Math.PI / 180;
 
   // Gravity-compensated body-frame acceleration
-  const ax_body = (sensor.accel_x || 0) + Math.sin(pitch) * 9.81;
-  const ay_body = (sensor.accel_y || 0) - Math.sin(roll) * Math.cos(pitch) * 9.81;
+  let ax_body = (sensor.accel_x || 0) + Math.sin(pitch) * 9.81;
+  let ay_body = (sensor.accel_y || 0) - Math.sin(roll) * Math.cos(pitch) * 9.81;
+
+  // Apply deadzone: zero out accelerations below threshold
+  if (Math.abs(ax_body) < deadzone) ax_body = 0;
+  if (Math.abs(ay_body) < deadzone) ay_body = 0;
+
+  // Apply acceleration scale
+  ax_body *= accelScale;
+  ay_body *= accelScale;
 
   // Rotate body-frame to world-frame using yaw heading
   const ax_world = ax_body * Math.cos(yaw) - ay_body * Math.sin(yaw);
   const ay_world = ax_body * Math.sin(yaw) + ay_body * Math.cos(yaw);
 
   // Integrate with damping
-  const damping = 0.95;
   drState.vx = (drState.vx + ax_world * dt) * damping;
   drState.vy = (drState.vy + ay_world * dt) * damping;
   drState.x += drState.vx * dt;
@@ -807,3 +863,54 @@ function resetDR() {
   drState.trail = [];
   drState.lastTime = null;
 }
+
+// === CAMERA FOCUS CONTROL ===
+function setFocusMode(mode) {
+  const payload = { mode };
+  if (mode === 0) {
+    payload.lens_position = parseFloat(document.getElementById('lensPosition').value);
+  }
+  fetch('/camera/focus', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        updateFocusUI(mode);
+      } else {
+        console.error("Focus error:", d.error);
+      }
+    })
+    .catch(console.error);
+}
+
+function updateLensPosition(value) {
+  const display = document.getElementById('lensPositionValue');
+  display.textContent = parseFloat(value).toFixed(1);
+  fetch('/camera/focus', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 0, lens_position: parseFloat(value) })
+  }).catch(console.error);
+}
+
+function updateFocusUI(mode) {
+  // Update active button
+  document.getElementById('focusBtnAuto').classList.toggle('active', mode === 2);
+  document.getElementById('focusBtnManual').classList.toggle('active', mode === 0);
+  document.getElementById('focusBtnOnce').classList.toggle('active', mode === 1);
+  // Show/hide lens position slider
+  document.getElementById('lensPositionRow').style.display = (mode === 0) ? 'flex' : 'none';
+}
+
+// Wire up lens position slider
+document.addEventListener('DOMContentLoaded', function() {
+  const slider = document.getElementById('lensPosition');
+  if (slider) {
+    slider.addEventListener('input', function() {
+      updateLensPosition(this.value);
+    });
+  }
+});

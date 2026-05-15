@@ -135,6 +135,13 @@ button:hover {
   background: #046;
 }
 
+/* LED on state — amber/yellow highlight */
+button.led-on {
+  background: #a80;
+  border-color: #ff0;
+  box-shadow: 0 0 10px rgba(255, 255, 0, 0.6);
+}
+
 /* Active state for motor buttons when motors are running */
 button.active {
   background: #0a4;
@@ -230,6 +237,41 @@ button.active {
   height: 150px;
   display: block;
   border-radius: 6px;
+}
+
+.dr-coefficients {
+  margin-top: 4px;
+  padding: 4px;
+  background: rgba(0, 40, 80, 0.3);
+  border-radius: 4px;
+}
+
+.dr-coeff-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.dr-coeff-row:last-child {
+  margin-bottom: 0;
+}
+
+.dr-coeff-row label {
+  width: 32px;
+  font-size: 10px;
+  color: #8cf;
+}
+
+.dr-coeff-row input {
+  flex: 1;
+  padding: 2px 4px;
+  font-size: 10px;
+  background: #123;
+  border: 1px solid #0ff;
+  border-radius: 3px;
+  color: #fff;
+  width: 50px;
 }
 
 .dr-controls {
@@ -506,6 +548,35 @@ button.active {
   50% { box-shadow: 0 0 15px rgba(0, 136, 255, 0.9); }
 }
 
+/* Go-to-depth input row */
+.go-to-depth {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.go-to-depth input {
+  flex: 1;
+  padding: 4px;
+  font-size: 11px;
+  background: #123;
+  border: 1px solid #08f;
+  border-radius: 3px;
+  color: #fff;
+  width: 60px;
+}
+
+.go-to-depth button {
+  background: #024;
+  border-color: #08f;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
+.go-to-depth button:hover {
+  background: #046;
+}
+
 .depth-hold-status {
   margin-top: 4px;
   font-size: 11px;
@@ -549,4 +620,73 @@ button.active {
   margin-top: 4px;
   padding: 4px;
   font-size: 10px;
+}
+
+/* =============================================================================
+   CAMERA FOCUS STYLES
+   ============================================================================= */
+
+.focus-modes {
+  display: flex;
+  gap: 4px;
+}
+
+.focus-btn {
+  flex: 1;
+  font-size: 11px;
+  padding: 5px 4px;
+  background: #123;
+  border: 1px solid #0ff;
+  color: #fff;
+}
+
+.focus-btn.active {
+  background: #08a;
+  border-color: #4df;
+  box-shadow: 0 0 6px rgba(68, 170, 255, 0.6);
+}
+
+.lens-position-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px;
+  background: rgba(0, 40, 80, 0.3);
+  border-radius: 4px;
+}
+
+.lens-position-row label {
+  font-size: 10px;
+  color: #8cf;
+  min-width: 28px;
+}
+
+.lens-position-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #234;
+  border-radius: 2px;
+  outline: none;
+}
+
+.lens-position-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4af;
+  cursor: pointer;
+  border: 1px solid #8cf;
+}
+
+.lens-position-row span {
+  font-size: 10px;
+  font-family: "Courier New", monospace;
+  color: #0ff;
+  min-width: 24px;
+  text-align: right;
 }

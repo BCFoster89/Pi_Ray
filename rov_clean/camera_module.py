@@ -21,6 +21,10 @@ output = None
 # Camera busy flag — True when switching modes (still capture)
 camera_busy = False
 
+# Focus state: mode 0=Manual, 1=Single-shot (AfTrigger), 2=Continuous
+current_focus_mode = 2  # default: continuous AF
+current_lens_position = 0.0  # 0.0 = infinity, ~10.0 = closest macro
+
 # Directories for saved files
 RECORDINGS_DIR = os.path.join(os.path.dirname(__file__), 'recordings')
 IMAGES_DIR = os.path.join(os.path.dirname(__file__), 'images')
@@ -52,10 +56,17 @@ def init_camera():
             )
             picam2.configure(vc)
             picam2.start()
-            # Enable continuous autofocus for Pi Camera v3
+            # Set focus mode (respects stored state)
             try:
-                picam2.set_controls({"AfMode": 2, "AfSpeed": 1})
-                log("[CAM] Autofocus enabled")
+                if current_focus_mode == 0:
+                    picam2.set_controls({"AfMode": 0, "LensPosition": current_lens_position})
+                    log(f"[CAM] Manual focus, lens position: {current_lens_position:.1f}")
+                elif current_focus_mode == 1:
+                    picam2.set_controls({"AfMode": 1, "AfTrigger": 0})
+                    log("[CAM] Single-shot AF")
+                else:
+                    picam2.set_controls({"AfMode": 2, "AfSpeed": 1})
+                    log("[CAM] Continuous AF enabled")
             except Exception:
                 pass  # Camera may not support AF
             log(f"[CAM] Picamera2 initialized at {VIDEO_SIZE[0]}x{VIDEO_SIZE[1]}")
@@ -64,6 +75,54 @@ def init_camera():
             log(f"[CAM] Failed to init camera: {e}")
             raise
     return picam2
+
+def set_focus_mode(mode, lens_position=None):
+    """
+    Set camera focus mode.
+    mode: 0=Manual, 1=Single-shot AF (AfTrigger), 2=Continuous AF
+    lens_position: float 0.0 (infinity) to ~10.0 (closest macro), used in manual mode
+    """
+    global current_focus_mode, current_lens_position, picam2
+
+    if picam2 is None:
+        log("[CAM] Cannot set focus - camera not initialized")
+        return False
+
+    try:
+        if mode == 0:
+            # Manual focus: disable AF, set lens position
+            if lens_position is not None:
+                current_lens_position = max(0.0, min(10.0, float(lens_position)))
+            picam2.set_controls({"AfMode": 0, "LensPosition": current_lens_position})
+            current_focus_mode = 0
+            log(f"[CAM] Manual focus, lens position: {current_lens_position:.1f}")
+        elif mode == 1:
+            # Single-shot AF: trigger one AF cycle then hold
+            picam2.set_controls({"AfMode": 1, "AfTrigger": 0})
+            current_focus_mode = 1
+            log("[CAM] Single-shot AF triggered")
+        elif mode == 2:
+            # Continuous AF
+            picam2.set_controls({"AfMode": 2, "AfSpeed": 1})
+            current_focus_mode = 2
+            log("[CAM] Continuous AF enabled")
+        else:
+            log(f"[CAM] Invalid focus mode: {mode}")
+            return False
+        return True
+    except Exception as e:
+        log(f"[CAM] Focus mode error: {e}")
+        return False
+
+
+def get_focus_status():
+    """Return current focus mode and lens position."""
+    return {
+        "mode": current_focus_mode,
+        "lens_position": current_lens_position,
+        "mode_name": ["Manual", "AF Once", "Continuous"][current_focus_mode]
+    }
+
 
 def generate_frames():
     """Generator that yields JPEG frames from the Picamera2."""
@@ -190,9 +249,14 @@ def capture_still():
                 )
                 picam2.configure(vc)
                 picam2.start()
-                # Re-enable autofocus
+                # Restore focus mode
                 try:
-                    picam2.set_controls({"AfMode": 2, "AfSpeed": 1})
+                    if current_focus_mode == 0:
+                        picam2.set_controls({"AfMode": 0, "LensPosition": current_lens_position})
+                    elif current_focus_mode == 1:
+                        picam2.set_controls({"AfMode": 1, "AfTrigger": 0})
+                    else:
+                        picam2.set_controls({"AfMode": 2, "AfSpeed": 1})
                 except Exception:
                     pass
 

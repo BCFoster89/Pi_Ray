@@ -11,6 +11,7 @@ import sensors   # ensures sensor loop is running
 from camera_module import (
     generate_frames, capture_still, start_recording, stop_recording,
     get_recording_status, list_recordings, list_images,
+    set_focus_mode, get_focus_status,
     RECORDINGS_DIR, IMAGES_DIR
 )
 from depth_hold import depth_controller
@@ -92,7 +93,7 @@ def init_app(app):
         cfg.led_state = not cfg.led_state
         GPIO.output(led_pin, GPIO.HIGH if cfg.led_state else GPIO.LOW)
         log(f"[LED] {'ON' if cfg.led_state else 'OFF'}")
-        return "OK"
+        return jsonify({"success": True, "led_on": cfg.led_state})
 
     @app.route("/cal_horizon")
     def cal_horizon():
@@ -323,18 +324,63 @@ def init_app(app):
         return jsonify({"recordings": list_recordings()})
 
     # ==========================================================================
+    # CAMERA FOCUS CONTROL
+    # ==========================================================================
+
+    @app.route("/camera/focus", methods=["POST"])
+    def camera_focus():
+        """Set camera focus mode and lens position."""
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "No JSON data received"}), 400
+
+            mode = int(data.get('mode', 2))
+            lens_position = data.get('lens_position')
+
+            if mode not in (0, 1, 2):
+                return jsonify({"error": "Invalid mode (0=Manual, 1=AF Once, 2=Continuous)"}), 400
+
+            if lens_position is not None:
+                lens_position = float(lens_position)
+
+            success = set_focus_mode(mode, lens_position)
+            if success:
+                return jsonify({"success": True, "status": get_focus_status()})
+            else:
+                return jsonify({"success": False, "error": "Failed to set focus mode"}), 500
+        except Exception as e:
+            log(f"[CAM] Focus endpoint error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/camera/focus_status")
+    def camera_focus_status():
+        """Get current camera focus status."""
+        return jsonify(get_focus_status())
+
+    # ==========================================================================
     # DEPTH HOLD PID CONTROL
     # ==========================================================================
 
     @app.route("/depth_hold/enable", methods=["POST"])
     def depth_hold_enable():
-        """Enable depth hold at current depth."""
+        """Enable depth hold at current depth, or go to a specific target depth."""
         try:
             # Don't allow depth hold while E-stop is engaged
             if pwm_motor.get_estop_state():
                 return jsonify({"success": False, "error": "Cannot enable depth hold while E-stop is engaged"}), 400
 
-            depth_controller.enable()
+            data = request.get_json(silent=True)
+            target_depth = data.get('target_depth') if data else None
+
+            if target_depth is not None:
+                target_depth = float(target_depth)
+                if not depth_controller.enabled:
+                    depth_controller.enable()
+                depth_controller.set_target(target_depth)
+            else:
+                depth_controller.enable()
+
             status = depth_controller.get_status()
             return jsonify({"success": True, "status": status})
         except Exception as e:
