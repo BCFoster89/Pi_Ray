@@ -31,6 +31,11 @@
       <pre id="telemetry"></pre>
     </div>
 
+    <div class="card hud-card" id="depthCard">
+      <h3>Depth</h3>
+      <div id="depthDisplay" class="depth-display">-- ft</div>
+    </div>
+
     <div class="card hud-card" id="drMapCard">
       <h3>DR Position</h3>
       <canvas id="drMapCanvas"></canvas>
@@ -56,6 +61,11 @@
     <div class="card hud-card" id="logsCard">
       <h3>Logs</h3>
       <pre id="logs"></pre>
+    </div>
+
+    <div class="card hud-card" id="ahCard">
+      <h3>Attitude</h3>
+      <canvas id="ahCanvas"></canvas>
     </div>
   </div>
 
@@ -169,6 +179,80 @@
     </div>
 
     <button class="emergency-stop" id="estopBtn" onclick="emergencyStop()">ALL STOP</button>
+    <button class="info-btn" id="infoBtn" onclick="showInfo()">&#9432; INFO</button>
+  </div>
+
+  <!-- Info Modal -->
+  <div id="infoModal" class="info-modal" style="display:none;" onclick="closeInfoOnOverlay(event)">
+    <div class="info-modal-content">
+      <div class="info-modal-header">
+        <h2>ROV Cockpit Reference</h2>
+        <button class="info-close-btn" onclick="closeInfo()">&#10005;</button>
+      </div>
+      <div class="info-modal-body">
+
+        <h3>Connection</h3>
+        <table class="info-table">
+          <tr><td>ROV Address</td><td><code>http://192.168.4.31:5000</code></td></tr>
+          <tr><td>Controller Script</td><td><code>winconpi5.py</code> (run on Windows PC)</td></tr>
+        </table>
+
+        <h3>Gamepad Controls</h3>
+        <table class="info-table">
+          <tr><td>Left Stick Y</td><td>Surge — Forward / Backward</td></tr>
+          <tr><td>Left Stick X</td><td>Sway — Strafe Left / Right</td></tr>
+          <tr><td>Right Stick X</td><td>Yaw — Rotate Left / Right</td></tr>
+          <tr><td>Left Trigger (LT)</td><td>Descend (0–100%)</td></tr>
+          <tr><td>Right Trigger (RT)</td><td>Ascend (0–100%)</td></tr>
+          <tr><td>Back Button</td><td>Emergency Stop (latching)</td></tr>
+          <tr><td>LB + RB together</td><td>Release E-Stop</td></tr>
+          <tr><td>Start Button</td><td>Toggle LED lights</td></tr>
+        </table>
+
+        <h3>Thruster Layout</h3>
+        <table class="info-table">
+          <tr><td>FL (Front-Left)</td><td>GPIO pin 8 — surge +, sway &minus;, yaw +</td></tr>
+          <tr><td>FR (Front-Right)</td><td>GPIO pin 12 — surge +, sway +, yaw &minus;</td></tr>
+          <tr><td>RL (Rear-Left)</td><td>GPIO pin 16 — surge &minus;, sway &minus;, yaw &minus;</td></tr>
+          <tr><td>RR (Rear-Right)</td><td>GPIO pin 13 — surge &minus;, sway +, yaw +</td></tr>
+          <tr><td>Descend</td><td>GPIO pins 6 &amp; 20 — vertical thrust down</td></tr>
+          <tr><td>Ascend</td><td>Not installed (placeholder)</td></tr>
+        </table>
+
+        <h3>Dead Reckoning (DR) Map</h3>
+        <p>Estimates position by integrating gravity-compensated IMU acceleration. Accuracy degrades over time without a position fix.</p>
+        <table class="info-table">
+          <tr><td><b>Damp</b> (0.80–1.00)</td><td>Velocity decay per update. Higher = more momentum/glide; lower = stops quickly.</td></tr>
+          <tr><td><b>Dead</b> (0.00–1.00)</td><td>Minimum acceleration threshold. Higher = ignores small vibrations and noise.</td></tr>
+          <tr><td><b>Scale</b> (0.1–5.0)</td><td>Acceleration sensitivity multiplier. Higher = map moves more per unit of movement.</td></tr>
+          <tr><td><b>Reset</b></td><td>Clears position to origin and erases trail history.</td></tr>
+        </table>
+
+        <h3>Depth Hold PID</h3>
+        <p>PID controller drives the vertical thrusters to hold a target depth.</p>
+        <table class="info-table">
+          <tr><td><b>Kp</b> (0–5)</td><td>Proportional gain — how aggressively thrust corrects depth error. Too high causes oscillation.</td></tr>
+          <tr><td><b>Ki</b> (0–2)</td><td>Integral gain — corrects slow persistent drift. Too high causes slow oscillation.</td></tr>
+          <tr><td><b>Kd</b> (0–2)</td><td>Derivative gain — dampens overshoot and oscillation. Too high amplifies sensor noise.</td></tr>
+        </table>
+
+        <h3>Calibration Buttons</h3>
+        <table class="info-table">
+          <tr><td><b>Zero Depth</b></td><td>Sets the current depth sensor reading as the 0 ft reference.</td></tr>
+          <tr><td><b>Zero Horizon</b></td><td>Levels the artificial horizon — zeroes pitch and roll offsets.</td></tr>
+          <tr><td><b>Zero IMU</b></td><td>Resets gyroscope and accelerometer bias (hold ROV still first).</td></tr>
+          <tr><td><b>Toggle LED</b></td><td>Turns the ROV's LED lighting on or off.</td></tr>
+        </table>
+
+        <h3>Camera Focus</h3>
+        <table class="info-table">
+          <tr><td><b>Auto</b></td><td>Continuous autofocus — camera adjusts focus automatically.</td></tr>
+          <tr><td><b>Manual</b></td><td>Manual lens position via slider. 0 = infinity (far), 10 = closest macro.</td></tr>
+          <tr><td><b>AF Once</b></td><td>Single autofocus shot, then locks focus in place.</td></tr>
+        </table>
+
+      </div>
+    </div>
   </div>
 
   <script src="{{ url_for('static', filename='js/script.js') }}"></script>

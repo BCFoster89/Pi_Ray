@@ -393,8 +393,12 @@ async function updateOverlay() {
     let data = await r.json();
     let sensor = data.sensor;
 
-    // draw HUD
+    // draw HUD and attitude canvas
     drawHUD(sensor);
+
+    // update depth card
+    const depthEl = document.getElementById('depthDisplay');
+    if (depthEl) depthEl.textContent = (sensor.depth_ft || 0).toFixed(1) + ' ft';
 
     // dead reckoning update and map draw
     updateDeadReckoning(sensor);
@@ -474,45 +478,35 @@ async function updateLogs() {
 }
 updateLogs();
 
-// === HUD DRAWING ===
-function drawHUD(sensor){
-  let canvas = document.getElementById("overlay");
-  let ctx = canvas.getContext("2d");
+// === ARTIFICIAL HORIZON (drawn on #ahCanvas card) ===
+function drawAH(sensor) {
+  const canvas = document.getElementById("ahCanvas");
+  if (!canvas) return;
   canvas.width = canvas.clientWidth;
   canvas.height = canvas.clientHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  let cx = canvas.width/2;
-
-  // === ARTIFICIAL HORIZON (small circle, top-left) ===
-  const ahRadius = 50;  // 100px diameter circle
-  const ahX = 80;       // center X position
-  const ahY = 120;      // center Y position
-  const pitchScale = 8; // pixels per degree of pitch
+  const ahX = canvas.width / 2;
+  const ahY = canvas.height / 2;
+  const ahRadius = Math.min(canvas.width, canvas.height) / 2 - 6;
+  const pitchScale = 8;
 
   ctx.save();
-
-  // Create circular clipping region
   ctx.beginPath();
   ctx.arc(ahX, ahY, ahRadius, 0, Math.PI * 2);
   ctx.clip();
 
-  // Translate to circle center and apply roll rotation
   ctx.translate(ahX, ahY);
   ctx.rotate((-sensor.roll || 0) * Math.PI / 180);
 
-  // Calculate pitch offset
-  let pitchOffset = (sensor.pitch || 0) * pitchScale;
+  const pitchOffset = (sensor.pitch || 0) * pitchScale;
 
-  // Draw sky (blue) - large rectangle above horizon
   ctx.fillStyle = "#1a4a7a";
   ctx.fillRect(-ahRadius * 2, -ahRadius * 2 + pitchOffset, ahRadius * 4, ahRadius * 2);
-
-  // Draw ground (brown) - large rectangle below horizon
   ctx.fillStyle = "#5a3a1a";
   ctx.fillRect(-ahRadius * 2, pitchOffset, ahRadius * 4, ahRadius * 2);
 
-  // Draw horizon line
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -520,7 +514,6 @@ function drawHUD(sensor){
   ctx.lineTo(ahRadius * 2, pitchOffset);
   ctx.stroke();
 
-  // Draw pitch ladder lines (every 2 degrees)
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 1;
   ctx.font = "8px Arial";
@@ -528,8 +521,8 @@ function drawHUD(sensor){
   ctx.textAlign = "center";
   for (let p = -10; p <= 10; p += 2) {
     if (p === 0) continue;
-    let offset = pitchOffset - p * pitchScale;
-    let lineWidth = (p % 4 === 0) ? 24 : 12;
+    const offset = pitchOffset - p * pitchScale;
+    const lineWidth = (p % 4 === 0) ? 24 : 12;
     ctx.beginPath();
     ctx.moveTo(-lineWidth / 2, offset);
     ctx.lineTo(lineWidth / 2, offset);
@@ -538,42 +531,30 @@ function drawHUD(sensor){
       ctx.fillText(Math.abs(p) + "", lineWidth / 2 + 6, offset + 3);
     }
   }
-
   ctx.restore();
 
-  // Draw fixed aircraft reference symbol (center of circle, not rotated)
+  // Aircraft reference symbol
   ctx.strokeStyle = "#fa0";
   ctx.lineWidth = 2;
-  // Left wing
-  ctx.beginPath();
-  ctx.moveTo(ahX - 25, ahY);
-  ctx.lineTo(ahX - 10, ahY);
-  ctx.stroke();
-  // Right wing
-  ctx.beginPath();
-  ctx.moveTo(ahX + 10, ahY);
-  ctx.lineTo(ahX + 25, ahY);
-  ctx.stroke();
-  // Center dot
-  ctx.beginPath();
-  ctx.arc(ahX, ahY, 3, 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ahX - 25, ahY); ctx.lineTo(ahX - 10, ahY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ahX + 10, ahY); ctx.lineTo(ahX + 25, ahY); ctx.stroke();
+  ctx.beginPath(); ctx.arc(ahX, ahY, 3, 0, Math.PI * 2); ctx.stroke();
 
-  // Draw circle border
+  // Circle border
   ctx.strokeStyle = "#888";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(ahX, ahY, ahRadius, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Draw roll indicator tick marks
+  // Roll tick marks
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 1;
   for (let r = -10; r <= 10; r += 2) {
     ctx.save();
     ctx.translate(ahX, ahY);
     ctx.rotate(r * Math.PI / 180);
-    let tickLen = (r % 4 === 0) ? 8 : 4;
+    const tickLen = (r % 4 === 0) ? 8 : 4;
     ctx.beginPath();
     ctx.moveTo(0, -ahRadius - 2);
     ctx.lineTo(0, -ahRadius - 2 - tickLen);
@@ -581,7 +562,7 @@ function drawHUD(sensor){
     ctx.restore();
   }
 
-  // Roll pointer (rotates with roll)
+  // Roll pointer
   ctx.save();
   ctx.translate(ahX, ahY);
   ctx.rotate((-sensor.roll || 0) * Math.PI / 180);
@@ -593,6 +574,20 @@ function drawHUD(sensor){
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+}
+
+// === HUD DRAWING ===
+function drawHUD(sensor){
+  let canvas = document.getElementById("overlay");
+  let ctx = canvas.getContext("2d");
+  canvas.width = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  let cx = canvas.width/2;
+
+  // Draw artificial horizon on its own card canvas
+  drawAH(sensor);
 
   // === HEADING TAPE (top-center) ===
   let heading = sensor.yaw || 0;
@@ -644,12 +639,6 @@ function drawHUD(sensor){
   ctx.lineWidth = 1;
   ctx.strokeStyle = "#ff0";
 
-  // === DEPTH DISPLAY (above artificial horizon) ===
-  ctx.fillStyle = "#4af";
-  ctx.font = "bold 24px Arial";
-  ctx.textAlign = "left";
-  // Position above the artificial horizon circle top edge
-  ctx.fillText(`Depth: ${(sensor.depth_ft||0).toFixed(1)} ft`, 20, ahY - ahRadius - 12);
 }
 
 // === DEAD RECKONING ===
@@ -914,3 +903,18 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 });
+
+// === INFO MODAL ===
+function showInfo() {
+  document.getElementById('infoModal').style.display = 'flex';
+}
+
+function closeInfo() {
+  document.getElementById('infoModal').style.display = 'none';
+}
+
+function closeInfoOnOverlay(event) {
+  if (event.target === document.getElementById('infoModal')) {
+    closeInfo();
+  }
+}

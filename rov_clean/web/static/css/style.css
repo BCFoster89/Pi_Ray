@@ -52,10 +52,10 @@ html, body {
   align-items: flex-end;
 }
 
-/* Left-hand controls (under artificial horizon) */
+/* Left-hand controls */
 #controls-left {
   position: absolute;
-  top: 200px;  /* Below the artificial horizon */
+  top: 10px;
   left: 15px;
   z-index: 3;
 
@@ -288,7 +288,7 @@ button.active {
 /* Responsive: even narrower on small screens */
 @media (max-width: 800px) {
   #controls-right { width: 150px; gap: 6px; right: 6px; top: 6px; }
-  #controls-left { width: 150px; gap: 4px; left: 6px; top: 180px; }
+  #controls-left { width: 150px; gap: 4px; left: 6px; top: 10px; }
   .button-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 5px; }
   button { font-size: 11px; padding: 5px 5px; }
   .card { padding: 6px; font-size: 12px; }
@@ -689,4 +689,155 @@ button.active {
   color: #0ff;
   min-width: 24px;
   text-align: right;
+}
+
+/* =============================================================================
+   DEPTH DISPLAY CARD
+   ============================================================================= */
+
+.depth-display {
+  font-size: 22px;
+  font-weight: bold;
+  color: #4af;
+  text-align: center;
+  padding: 4px 0;
+  font-family: "Courier New", monospace;
+}
+
+/* =============================================================================
+   ATTITUDE (ARTIFICIAL HORIZON) CANVAS CARD
+   ============================================================================= */
+
+#ahCanvas {
+  width: 100%;
+  height: 120px;
+  display: block;
+  border-radius: 6px;
+}
+
+/* =============================================================================
+   INFO BUTTON & MODAL
+   ============================================================================= */
+
+.info-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px;
+  background: #014;
+  border: 1px solid #08f;
+  color: #8cf;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.info-btn:hover {
+  background: #036;
+  box-shadow: 0 0 8px rgba(0, 136, 255, 0.4);
+}
+
+.info-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.info-modal-content {
+  background: rgba(8, 18, 36, 0.98);
+  border: 1px solid #0ff;
+  border-radius: 12px;
+  padding: 20px 24px;
+  max-width: 580px;
+  width: 92vw;
+  max-height: 82vh;
+  overflow-y: auto;
+  color: #e0f7fa;
+  box-shadow: 0 0 40px rgba(0, 255, 255, 0.15);
+}
+
+.info-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+}
+
+.info-modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #4df;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.info-close-btn {
+  background: transparent;
+  border: 1px solid #466;
+  color: #8cf;
+  font-size: 14px;
+  padding: 3px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.info-close-btn:hover {
+  background: #200;
+  border-color: #f44;
+  color: #f88;
+}
+
+.info-modal-body h3 {
+  font-size: 12px;
+  color: #4df;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 14px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 200, 255, 0.2);
+}
+
+.info-modal-body p {
+  font-size: 11px;
+  color: #9bc;
+  margin: 4px 0 6px;
+  line-height: 1.5;
+}
+
+.info-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.info-table td {
+  padding: 4px 6px;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(0, 100, 150, 0.2);
+}
+
+.info-table td:first-child {
+  color: #8cf;
+  white-space: nowrap;
+  width: 38%;
+  font-weight: bold;
+}
+
+.info-table td:last-child {
+  color: #cde;
+}
+
+.info-table code {
+  font-family: "Courier New", monospace;
+  color: #0ff;
+  font-size: 11px;
 }
