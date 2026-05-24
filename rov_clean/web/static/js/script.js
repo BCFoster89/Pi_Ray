@@ -235,6 +235,8 @@ async function captureImage() {
 
 // === DEPTH HOLD FUNCTIONS ===
 let depthHoldEnabled = false;
+let headingHoldEnabled = false;
+let positionHoldEnabled = false;
 
 async function toggleDepthHold() {
   const btn = document.getElementById('depthHoldBtn');
@@ -356,6 +358,166 @@ async function pollDepthHoldStatus() {
   }
 }
 setInterval(pollDepthHoldStatus, 500);
+
+// === HEADING HOLD FUNCTIONS ===
+async function toggleHeadingHold() {
+  const btn = document.getElementById('headingHoldBtn');
+  const statusEl = document.getElementById('headingHoldStatus');
+  try {
+    if (!headingHoldEnabled) {
+      let r = await fetch('/heading_hold/enable', { method: 'POST' });
+      let data = await r.json();
+      if (data.success) {
+        headingHoldEnabled = true;
+        btn.classList.add('active');
+        btn.textContent = 'Release';
+        statusEl.textContent = `Holding: ${data.status.target_heading.toFixed(0)}°`;
+      } else {
+        statusEl.textContent = data.error || 'Failed';
+      }
+    } else {
+      await fetch('/heading_hold/disable', { method: 'POST' });
+      headingHoldEnabled = false;
+      btn.classList.remove('active');
+      btn.textContent = 'Heading Hold';
+      statusEl.textContent = '';
+    }
+  } catch (e) {
+    console.error("Heading hold error:", e);
+    statusEl.textContent = 'Error';
+  }
+}
+
+async function updateHeadingPID() {
+  const kp = parseFloat(document.getElementById('headingKp').value);
+  const ki = parseFloat(document.getElementById('headingKi').value);
+  const kd = parseFloat(document.getElementById('headingKd').value);
+  try {
+    let r = await fetch('/heading_hold/tune', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kp, ki, kd })
+    });
+    let data = await r.json();
+    if (!data.success) alert("Heading PID error: " + (data.error || "unknown"));
+  } catch (e) {
+    console.error("Heading PID tune error:", e);
+  }
+}
+
+async function pollHeadingHoldStatus() {
+  try {
+    let r = await fetch('/heading_hold/status', { cache: "no-store" });
+    let data = await r.json();
+    const btn = document.getElementById('headingHoldBtn');
+    const statusEl = document.getElementById('headingHoldStatus');
+    headingHoldEnabled = data.enabled;
+    if (data.enabled) {
+      btn.classList.add('active');
+      btn.textContent = 'Release';
+      statusEl.textContent = `Target: ${data.target_heading.toFixed(0)}° | Err: ${data.error.toFixed(1)}°`;
+    } else {
+      btn.classList.remove('active');
+      btn.textContent = 'Heading Hold';
+    }
+    const activeEl = document.activeElement;
+    const kpEl = document.getElementById('headingKp');
+    const kiEl = document.getElementById('headingKi');
+    const kdEl = document.getElementById('headingKd');
+    if (activeEl !== kpEl) kpEl.value = data.kp;
+    if (activeEl !== kiEl) kiEl.value = data.ki;
+    if (activeEl !== kdEl) kdEl.value = data.kd;
+  } catch (e) { /* silently ignore */ }
+}
+setInterval(pollHeadingHoldStatus, 500);
+
+// === POSITION HOLD FUNCTIONS ===
+async function togglePositionHold() {
+  const btn = document.getElementById('positionHoldBtn');
+  const statusEl = document.getElementById('positionHoldStatus');
+  try {
+    if (!positionHoldEnabled) {
+      let r = await fetch('/position_hold/enable', { method: 'POST' });
+      let data = await r.json();
+      if (data.success) {
+        positionHoldEnabled = true;
+        btn.classList.add('active');
+        btn.textContent = 'Release';
+        statusEl.textContent = 'Station keeping active';
+      } else {
+        statusEl.textContent = data.error || 'Failed';
+      }
+    } else {
+      await fetch('/position_hold/disable', { method: 'POST' });
+      positionHoldEnabled = false;
+      btn.classList.remove('active');
+      btn.textContent = 'Station Keep';
+      statusEl.textContent = '';
+    }
+  } catch (e) {
+    console.error("Position hold error:", e);
+    statusEl.textContent = 'Error';
+  }
+}
+
+async function pollPositionHoldStatus() {
+  try {
+    let r = await fetch('/position_hold/status', { cache: "no-store" });
+    let data = await r.json();
+    const btn = document.getElementById('positionHoldBtn');
+    const statusEl = document.getElementById('positionHoldStatus');
+    positionHoldEnabled = data.enabled;
+    if (data.enabled) {
+      btn.classList.add('active');
+      btn.textContent = 'Release';
+      statusEl.textContent = `Vx:${data.dr_vx.toFixed(2)} Vy:${data.dr_vy.toFixed(2)} m/s`;
+    } else {
+      btn.classList.remove('active');
+      btn.textContent = 'Station Keep';
+    }
+  } catch (e) { /* silently ignore */ }
+}
+setInterval(pollPositionHoldStatus, 500);
+
+// === MAGNETOMETER CALIBRATION ===
+let _magCalActive = false;
+async function toggleMagCal() {
+  const btn = document.getElementById('magCalBtn');
+  const statusEl = document.getElementById('magCalStatus');
+  if (!_magCalActive) {
+    await fetch('/mag_cal/start', { method: 'POST' });
+    _magCalActive = true;
+    btn.classList.add('active');
+    btn.textContent = 'Finish Cal';
+    statusEl.textContent = 'Rotating... collecting samples';
+    _pollMagCalSamples();
+  } else {
+    let r = await fetch('/mag_cal/finish', { method: 'POST' });
+    let data = await r.json();
+    _magCalActive = false;
+    btn.classList.remove('active');
+    btn.textContent = 'Mag Cal';
+    if (data.success) {
+      const hi = data.hard_iron.map(v => v.toFixed(1)).join(', ');
+      statusEl.textContent = `Done! Hard iron: [${hi}]`;
+    } else {
+      statusEl.textContent = data.error || 'Failed';
+    }
+  }
+}
+
+async function _pollMagCalSamples() {
+  if (!_magCalActive) return;
+  try {
+    let r = await fetch('/mag_cal/status', { cache: "no-store" });
+    let data = await r.json();
+    const statusEl = document.getElementById('magCalStatus');
+    if (statusEl && data.collecting) {
+      statusEl.textContent = `Collecting: ${data.sample_count} samples (need ≥50)`;
+      setTimeout(_pollMagCalSamples, 500);
+    }
+  } catch (e) {}
+}
 
 // === STATUS HEARTBEAT + LATENCY ===
 async function heartbeatLoop(){
@@ -643,53 +805,49 @@ function drawHUD(sensor){
 
 // === DEAD RECKONING ===
 function updateDeadReckoning(sensor) {
-  const now = performance.now() / 1000; // seconds
-  if (drState.lastTime === null) {
-    drState.lastTime = now;
+  // Prefer server-side DR (quaternion-accurate, 20Hz) if available
+  if (typeof sensor.dr_x === 'number' && typeof sensor.dr_y === 'number') {
+    drState.x  = sensor.dr_x;
+    drState.y  = sensor.dr_y;
+    drState.vx = sensor.dr_vx || 0;
+    drState.vy = sensor.dr_vy || 0;
+    drState.trail.push({ x: drState.x, y: drState.y });
+    if (drState.trail.length > 500) drState.trail.shift();
     return;
   }
+
+  // ── Client-side fallback (used when server DR unavailable) ──
+  const now = performance.now() / 1000;
+  if (drState.lastTime === null) { drState.lastTime = now; return; }
   const dt = now - drState.lastTime;
   drState.lastTime = now;
-
-  // Clamp dt to avoid large jumps (e.g. tab was backgrounded)
   if (dt <= 0 || dt > 1) return;
 
-  // Read tunable coefficients from DOM inputs
-  const damping = parseFloat(document.getElementById('drDamping').value) || 0.95;
-  const deadzone = parseFloat(document.getElementById('drDeadzone').value) || 0.05;
+  const damping   = parseFloat(document.getElementById('drDamping').value)   || 0.95;
+  const deadzone  = parseFloat(document.getElementById('drDeadzone').value)  || 0.05;
   const accelScale = parseFloat(document.getElementById('drAccelScale').value) || 1.0;
 
   const pitch = (sensor.pitch || 0) * Math.PI / 180;
   const roll  = (sensor.roll  || 0) * Math.PI / 180;
   const yaw   = (sensor.yaw   || 0) * Math.PI / 180;
 
-  // Gravity-compensated body-frame acceleration
   let ax_body = (sensor.accel_x || 0) + Math.sin(pitch) * 9.81;
   let ay_body = (sensor.accel_y || 0) - Math.sin(roll) * Math.cos(pitch) * 9.81;
-
-  // Apply deadzone: zero out accelerations below threshold
   if (Math.abs(ax_body) < deadzone) ax_body = 0;
   if (Math.abs(ay_body) < deadzone) ay_body = 0;
-
-  // Apply acceleration scale
   ax_body *= accelScale;
   ay_body *= accelScale;
 
-  // Rotate body-frame to world-frame using yaw heading
   const ax_world = ax_body * Math.cos(yaw) - ay_body * Math.sin(yaw);
   const ay_world = ax_body * Math.sin(yaw) + ay_body * Math.cos(yaw);
 
-  // Integrate with damping
   drState.vx = (drState.vx + ax_world * dt) * damping;
   drState.vy = (drState.vy + ay_world * dt) * damping;
   drState.x += drState.vx * dt;
   drState.y += drState.vy * dt;
 
-  // Append to trail (cap at 500 points)
   drState.trail.push({ x: drState.x, y: drState.y });
-  if (drState.trail.length > 500) {
-    drState.trail.shift();
-  }
+  if (drState.trail.length > 500) drState.trail.shift();
 }
 
 function drawDRMap(sensor) {
@@ -851,6 +1009,8 @@ function resetDR() {
   drState.vy = 0;
   drState.trail = [];
   drState.lastTime = null;
+  // Also reset server-side DR
+  fetch('/dr/reset', { method: 'POST' }).catch(() => {});
 }
 
 // === CAMERA FOCUS CONTROL ===

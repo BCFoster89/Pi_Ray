@@ -2,5 +2,7 @@
   "roll_offset": 0.0,
   "pitch_offset": 0.0,
   "yaw_offset": 0.0,
-  "depth_zero_ft": 0.28
+  "depth_zero_ft": 0.28,
+  "mag_hard_iron": [0.0, 0.0, 0.0],
+  "mag_soft_iron": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
 }

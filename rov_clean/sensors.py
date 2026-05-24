@@ -1,33 +1,153 @@
 # sensors.py
 import time, math, threading
 from collections import deque
+import numpy as np
 import adafruit_lps28, board, qwiic_lsm6dso
 import RPi.GPIO as GPIO
 from logger import log
 from config import sensor_data, leak_pin
 from calibration import calib, cal_lock
+from dead_reckoning import dr_estimator
 
-# Track leak state for logging (protected by _sensor_lock)
+try:
+    from ahrs.filters import Madgwick as _MadgwickFilter
+    _AHRS_OK = True
+except ImportError:
+    _AHRS_OK = False
+    log("[SENSORS] ahrs library not found — pip install ahrs. Falling back to complementary filter.")
+
+try:
+    import adafruit_mmc56x3 as _mmc56x3_mod
+    _MAG_LIB_OK = True
+except ImportError:
+    _MAG_LIB_OK = False
+    log("[SENSORS] adafruit_mmc56x3 not found — pip install adafruit-circuitpython-mmc56x3")
+
+# Track leak state (protected by _sensor_lock)
 _last_leak_state = False
 _sensor_lock = threading.Lock()
 
-# Shared/internal state
-pressure_buf = deque(maxlen=5)
+# Shared orientation state (Euler angles, degrees) — read by routes.py
 roll_f = pitch_f = yaw_f = 0.0
-last_time = time.time()
-alpha_c = 0.98
 
-# IMU calibration offsets
+# Quaternion state [w, x, y, z] — NED frame
+_q = np.array([1.0, 0.0, 0.0, 0.0])
+_q_lock = threading.Lock()
+
+# Madgwick filter instance
+_madgwick = None
+_beta = 0.1
+if _AHRS_OK:
+    _madgwick = _MadgwickFilter(frequency=20.0, beta=_beta)
+
+# Pressure median filter
+pressure_buf = deque(maxlen=5)
+
+# IMU calibration offsets (applied before filter)
 accel_offsets = {'x': 0.0, 'y': 0.0, 'z': 0.0}
 gyro_offsets  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
 imu_offsets_enabled = False
 
-# Integration state (exposed for calibration reset from routes.py)
-roll_i = pitch_i = yaw_i = 0.0
+# Magnetometer calibration collection state
+_mag_cal_samples = []
+_mag_cal_collecting = False
+_mag_cal_lock = threading.Lock()
 
-# Consecutive error tracking for sensor_ok flag
+# Consecutive error tracking
 _consecutive_errors = 0
-_MAX_CONSECUTIVE_ERRORS = 10  # Mark sensor as offline after 10 failures (0.5s)
+_MAX_CONSECUTIVE_ERRORS = 10
+
+# Complementary filter fallback (used only when ahrs not available)
+_alpha_c = 0.98
+last_time = time.time()
+
+
+def reset_orientation():
+    """Reset quaternion and Euler state to identity (called from routes.py on calibration)."""
+    global _q, roll_f, pitch_f, yaw_f
+    with _q_lock:
+        _q = np.array([1.0, 0.0, 0.0, 0.0])
+        roll_f = pitch_f = yaw_f = 0.0
+
+
+def set_madgwick_beta(beta):
+    """Tune the Madgwick beta parameter at runtime."""
+    global _beta, _madgwick
+    _beta = max(0.01, min(1.0, float(beta)))
+    if _madgwick is not None:
+        _madgwick.beta = _beta
+    log(f"[SENSORS] Madgwick beta set to {_beta}")
+
+
+def start_mag_cal():
+    """Begin collecting magnetometer samples for calibration."""
+    global _mag_cal_collecting
+    with _mag_cal_lock:
+        _mag_cal_samples.clear()
+        _mag_cal_collecting = True
+    log("[MAG_CAL] Collection started — rotate ROV through all orientations")
+
+
+def finish_mag_cal():
+    """
+    Stop collection and compute hard-iron offset + diagonal soft-iron scale.
+    Returns (hard_iron, soft_iron_matrix) or None on failure.
+    """
+    global _mag_cal_collecting
+    with _mag_cal_lock:
+        _mag_cal_collecting = False
+        n = len(_mag_cal_samples)
+        if n < 50:
+            log(f"[MAG_CAL] Not enough samples ({n}), need ≥50")
+            return None
+        arr = np.array(_mag_cal_samples)
+
+    # Hard-iron: centre of the measurement cloud
+    mins = arr.min(axis=0)
+    maxs = arr.max(axis=0)
+    hard_iron = ((mins + maxs) / 2.0).tolist()
+
+    # Soft-iron: normalise each axis range to a common average
+    ranges = (maxs - mins) / 2.0  # half-ranges per axis
+    avg_range = float(np.mean(ranges))
+    with np.errstate(divide='ignore', invalid='ignore'):
+        scales = np.where(ranges > 0, avg_range / ranges, 1.0)
+    # Store as a diagonal 3x3 matrix for consistent JSON format
+    soft_iron = np.diag(scales).tolist()
+
+    with cal_lock:
+        calib['mag_hard_iron'] = hard_iron
+        calib['mag_soft_iron'] = soft_iron
+
+    from calibration import save_calib
+    save_calib()
+    log(f"[MAG_CAL] Done: hard_iron={[round(v,2) for v in hard_iron]}, "
+        f"scale={[round(v,2) for v in scales.tolist()]}")
+    return hard_iron, soft_iron
+
+
+def _apply_mag_cal(mx, my, mz):
+    """Apply hard-iron offset and diagonal soft-iron correction."""
+    with cal_lock:
+        hi = calib['mag_hard_iron']
+        si = calib['mag_soft_iron']
+    cx = mx - hi[0]
+    cy = my - hi[1]
+    cz = mz - hi[2]
+    # Diagonal element of the soft-iron matrix
+    cx *= si[0][0]
+    cy *= si[1][1]
+    cz *= si[2][2]
+    return cx, cy, cz
+
+
+def _quat_to_euler(q):
+    """Convert quaternion [w, x, y, z] to (roll, pitch, yaw) in degrees."""
+    w, x, y, z = q
+    roll  = math.degrees(math.atan2(2*(w*x + y*z), 1 - 2*(x*x + y*y)))
+    pitch = math.degrees(math.asin(max(-1.0, min(1.0, 2*(w*y - z*x)))))
+    yaw   = math.degrees(math.atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z)))
+    return roll, pitch, yaw
 
 
 def init_imu():
@@ -45,13 +165,28 @@ def init_imu():
         return None
 
 
+def _init_mag(i2c_bus):
+    if not _MAG_LIB_OK:
+        return None
+    try:
+        mag = _mmc56x3_mod.MMC5603(i2c_bus)
+        log("[SENSORS] Magnetometer initialized (Adafruit MMC5603 @ 0x30)")
+        sensor_data['mag_ok'] = True
+        return mag
+    except Exception as e:
+        log(f"[SENSORS] MMC5603 not found — {e}")
+        sensor_data['mag_ok'] = False
+        return None
+
+
 def sensor_loop():
-    global roll_i, pitch_i, yaw_i, roll_f, pitch_f, yaw_f, last_time
+    global roll_f, pitch_f, yaw_f, _q, last_time
     global accel_offsets, gyro_offsets, imu_offsets_enabled
     global _last_leak_state, _consecutive_errors
 
     try:
-        ps = adafruit_lps28.LPS28(board.I2C())
+        i2c = board.I2C()
+        ps = adafruit_lps28.LPS28(i2c)
     except Exception as e:
         log(f"[SENSOR] LPS28 init failed: {e}")
         sensor_data['sensor_ok'] = False
@@ -61,6 +196,8 @@ def sensor_loop():
     if not imu:
         sensor_data['sensor_ok'] = False
         return
+
+    mag = _init_mag(i2c)
 
     log("[SENSOR] Sensors ready")
     sensor_data['sensor_ok'] = True
@@ -72,92 +209,127 @@ def sensor_loop():
             dt = max(1e-3, now - last_time)
             last_time = now
 
-            # Pressure / temp / depth — work in hPa directly
+            # ── Pressure / depth ────────────────────────────────────────────
             pressure_hpa = ps.pressure
             tc = ps.temperature
             tf = tc * 9.0 / 5.0 + 32.0
 
-            # Median filter on pressure (hPa)
             pressure_buf.append(pressure_hpa)
             med_hpa = sorted(pressure_buf)[len(pressure_buf) // 2]
 
-            # Depth from gauge pressure: (hPa - atmospheric) * conversion factor
-            # 0.033488 ft/hPa is correct for freshwater (rho=998 kg/m3)
             depth_ft_raw = max(0.0, (med_hpa - 1013.25) * 0.033488)
             with cal_lock:
                 dz = calib['depth_zero_ft']
             depth_ft = max(0.0, depth_ft_raw - dz)
 
-            # IMU readings
-            ax, ay, az = imu.read_float_accel_all()
-            gx, gy, gz = imu.read_float_gyro_all()
+            # ── IMU ─────────────────────────────────────────────────────────
+            ax, ay, az = imu.read_float_accel_all()   # g
+            gx, gy, gz = imu.read_float_gyro_all()   # deg/s
 
             if imu_offsets_enabled:
                 ax -= accel_offsets['x']; ay -= accel_offsets['y']; az -= accel_offsets['z']
-                gx -= gyro_offsets['x']; gy -= gyro_offsets['y']; gz -= gyro_offsets['z']
+                gx -= gyro_offsets['x'];  gy -= gyro_offsets['y'];  gz -= gyro_offsets['z']
 
-            # Read temperature from IMU
             temp_raw = imu.read_temp_c()
-
             if temp_raw is None:
                 temp_c = 0.0
             elif -10 <= temp_raw <= 85:
-                # Value is in reasonable range — library likely applies offset
                 temp_c = temp_raw
             elif -35 <= temp_raw <= 60:
-                # Value looks like it's missing the +25C offset
                 temp_c = temp_raw + 25.0
             else:
                 temp_c = 0.0
+            itf = temp_c * 9.0 / 5.0 + 32.0
 
-            # Convert to Fahrenheit for display
-            itf = (temp_c * 9.0 / 5.0) + 32.0
+            # ── Magnetometer ─────────────────────────────────────────────────
+            mx_cal = my_cal = mz_cal = 0.0
+            if mag is not None:
+                try:
+                    mx_raw, my_raw, mz_raw = mag.magnetic   # µT
+                    mx_cal, my_cal, mz_cal = _apply_mag_cal(mx_raw, my_raw, mz_raw)
 
-            # Complementary filter for roll/pitch
-            # Gyro integration
-            roll_i += gx * dt
-            pitch_i += gy * dt
-            # Yaw: gyro-only integration (no magnetometer — will drift over time)
-            yaw_i += gz * dt
+                    # Collect samples for calibration if active
+                    with _mag_cal_lock:
+                        if _mag_cal_collecting:
+                            _mag_cal_samples.append([mx_raw, my_raw, mz_raw])
+                except Exception:
+                    pass  # transient mag read error — skip this sample
 
-            # Accelerometer angles
-            ar = math.degrees(math.atan2(ay, az))
-            ap = math.degrees(math.atan2(-ax, math.sqrt(ay**2 + az**2)))
+            # ── Attitude fusion (Madgwick 9-DOF or complementary fallback) ──
+            gyro_rad = np.array([gx, gy, gz]) * (math.pi / 180.0)
+            accel_g  = np.array([ax, ay, az])
+            mag_cal  = np.array([mx_cal, my_cal, mz_cal])
+            mag_norm = np.linalg.norm(mag_cal)
 
-            # Complementary filter fuses gyro + accelerometer (roll/pitch only)
-            roll_f = alpha_c * (roll_f + gx * dt) + (1 - alpha_c) * ar
-            pitch_f = alpha_c * (pitch_f + gy * dt) + (1 - alpha_c) * ap
-            # Yaw uses raw integration only — no EMA, no accelerometer correction
-            yaw_f = yaw_i
+            with _q_lock:
+                q_in = _q.copy()
 
+            if _madgwick is not None:
+                try:
+                    if mag is not None and mag_norm > 1.0:
+                        # 9-DOF update with magnetometer
+                        q_out = _madgwick.updateMARG(q_in, gyr=gyro_rad,
+                                                     acc=accel_g, mag=mag_cal)
+                    else:
+                        # 6-DOF fallback (no mag or mag reads zero)
+                        q_out = _madgwick.updateIMU(q_in, gyr=gyro_rad, acc=accel_g)
+                    with _q_lock:
+                        _q = q_out
+                    roll_f, pitch_f, yaw_f = _quat_to_euler(q_out)
+                except Exception as e:
+                    log(f"[SENSORS] Madgwick error: {e}")
+                    # Keep previous Euler values
+            else:
+                # ── Complementary filter fallback ─────────────────────────
+                ar = math.degrees(math.atan2(ay, az))
+                ap = math.degrees(math.atan2(-ax, math.sqrt(ay**2 + az**2)))
+                roll_f  = _alpha_c * (roll_f  + gx * dt) + (1 - _alpha_c) * ar
+                pitch_f = _alpha_c * (pitch_f + gy * dt) + (1 - _alpha_c) * ap
+                yaw_f  += gz * dt
+
+            # ── Apply calibration offsets to Euler output ─────────────────
             with cal_lock:
-                ro = calib['roll_offset']; po = calib['pitch_offset']; yo = calib['yaw_offset']
+                ro = calib['roll_offset']
+                po = calib['pitch_offset']
+                yo = calib['yaw_offset']
+            with _q_lock:
+                q_snap = _q.copy()
 
-            yaw_display = (yaw_f - yo + 180) % 360 - 180
+            yaw_display = (yaw_f - yo + 180.0) % 360.0 - 180.0
 
-            # Check leak sensor (active LOW - LOW means water detected)
+            # ── Server-side dead reckoning ────────────────────────────────
+            dr_estimator.update(q_snap, ax, ay, az, dt)
+            dr_state = dr_estimator.get_state()
+
+            # ── Leak sensor ──────────────────────────────────────────────
             with _sensor_lock:
                 leak_detected = GPIO.input(leak_pin) == GPIO.LOW
                 if leak_detected and not _last_leak_state:
                     log("[WARNING] LEAK DETECTED!")
                 _last_leak_state = leak_detected
 
-            # Update shared dict
+            # ── Publish to shared dict ───────────────────────────────────
             sensor_data.update({
                 'pressure_inhg': round(med_hpa * 0.02953, 2),
                 'temperature_f': round(tf, 1),
                 'depth_ft': round(depth_ft, 2),
-                'accel_x': round(ax, 2), 'accel_y': round(ay, 2), 'accel_z': round(az, 2),
-                'gyro_x': round(gx, 1), 'gyro_y': round(gy, 1), 'gyro_z': round(gz, 1),
+                'accel_x': round(ax, 3), 'accel_y': round(ay, 3), 'accel_z': round(az, 3),
+                'gyro_x': round(gx, 1),  'gyro_y': round(gy, 1),  'gyro_z': round(gz, 1),
                 'imu_temp_f': round(itf, 1),
-                'roll': round(roll_f - ro, 1),
+                'roll':  round(roll_f  - ro, 1),
                 'pitch': round(pitch_f - po, 1),
-                'yaw': round(yaw_display, 1),
+                'yaw':   round(yaw_display, 1),
+                'mag_x': round(mx_cal, 2), 'mag_y': round(my_cal, 2), 'mag_z': round(mz_cal, 2),
+                'mag_ok': mag is not None,
+                'quat_w': round(float(q_snap[0]), 4),
+                'quat_x': round(float(q_snap[1]), 4),
+                'quat_y': round(float(q_snap[2]), 4),
+                'quat_z': round(float(q_snap[3]), 4),
+                **dr_state,
                 'leak_detected': leak_detected,
-                'sensor_ok': True
+                'sensor_ok': True,
             })
 
-            # Reset error counter on successful read
             _consecutive_errors = 0
 
         except Exception as e:
@@ -169,5 +341,4 @@ def sensor_loop():
         time.sleep(0.05)
 
 
-# Start thread at import
 threading.Thread(target=sensor_loop, daemon=True).start()

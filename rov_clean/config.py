@@ -102,8 +102,14 @@ sensor_data = {
     'accel_x': 0.0, 'accel_y': 0.0, 'accel_z': 0.0,
     'gyro_x': 0.0, 'gyro_y': 0.0, 'gyro_z': 0.0,
     'imu_temp_f': 0.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+    # Magnetometer (MMC5603) — calibrated µT
+    'mag_x': 0.0, 'mag_y': 0.0, 'mag_z': 0.0, 'mag_ok': False,
+    # Madgwick quaternion output
+    'quat_w': 1.0, 'quat_x': 0.0, 'quat_y': 0.0, 'quat_z': 0.0,
+    # Server-side dead reckoning (NED, metres / m/s)
+    'dr_x': 0.0, 'dr_y': 0.0, 'dr_vx': 0.0, 'dr_vy': 0.0,
     'leak_detected': False,
-    'sensor_ok': False  # Set True once sensor loop is running successfully
+    'sensor_ok': False,
 }
 
 # GPIO setup (run at import)

@@ -15,9 +15,13 @@ from camera_module import (
     RECORDINGS_DIR, IMAGES_DIR
 )
 from depth_hold import depth_controller
+from heading_hold import heading_controller
+from position_hold import position_controller
 
-# Wire depth hold to respect E-stop state (avoids circular import)
+# Wire all hold controllers to respect E-stop state (avoids circular import)
 depth_controller.set_estop_check(pwm_motor.get_estop_state)
+heading_controller.set_estop_check(pwm_motor.get_estop_state)
+position_controller.set_estop_check(pwm_motor.get_estop_state)
 
 # This function will be called by main.py to attach routes to the Flask app.
 def init_app(app):
@@ -53,11 +57,13 @@ def init_app(app):
         except Exception as e:
             log(f"[MOTOR] PWM emergency stop failed: {e}")
 
-        # Disable depth hold so PID doesn't fight the E-stop
-        try:
-            depth_controller.disable()
-        except Exception as e:
-            log(f"[MOTOR] Depth hold disable failed during E-stop: {e}")
+        # Disable all hold controllers so PIDs don't fight the E-stop
+        for ctrl, name in [(depth_controller, "Depth"), (heading_controller, "Heading"),
+                           (position_controller, "Position")]:
+            try:
+                ctrl.disable()
+            except Exception as e:
+                log(f"[MOTOR] {name} hold disable failed during E-stop: {e}")
 
         # Also turn off any legacy groups currently reported as "on"
         stopped = []
@@ -97,11 +103,9 @@ def init_app(app):
 
     @app.route("/cal_horizon")
     def cal_horizon():
-        # reset integrated orientation and zero offsets
         import sensors as s
         with cal_lock:
-            s.roll_i = s.pitch_i = s.yaw_i = 0.0
-            s.roll_f = s.pitch_f = s.yaw_f = 0.0
+            s.reset_orientation()
             calib['roll_offset'] = 0.0
             calib['pitch_offset'] = 0.0
             calib['yaw_offset'] = 0.0
@@ -114,12 +118,7 @@ def init_app(app):
         import sensors as s
         with cal_lock:
             if not s.imu_offsets_enabled:
-                # Expected gravity vector along Z axis in body frame (1g downward)
                 expected = {'x': 0.0, 'y': 0.0, 'z': 1.0}
-
-                # Note: sensor_data values may be up to one sensor cycle (50ms) stale
-                # since sensor_data is updated by the sensor thread without cal_lock.
-                # This is acceptable for a one-shot calibration operation.
                 ax = sensor_data['accel_x']
                 ay = sensor_data['accel_y']
                 az = sensor_data['accel_z']
@@ -140,9 +139,7 @@ def init_app(app):
                 s.imu_offsets_enabled = False
                 msg = "IMU calibration offsets cleared"
 
-            # Reset orientation integration
-            s.roll_i = s.pitch_i = s.yaw_i = 0.0
-            s.roll_f = s.pitch_f = s.yaw_f = 0.0
+            s.reset_orientation()
 
         log("[CAL] Zero IMU pressed")
         return msg
@@ -207,20 +204,28 @@ def init_app(app):
             descend = max(0.0, min(1.0, descend))  # 0-1 range for triggers
             ascend = max(0.0, min(1.0, ascend))    # 0-1 range for triggers
 
-            # If depth hold is enabled, override descend/ascend with PID output
+            # Depth hold: override vertical axes with PID output
             if depth_controller.enabled:
                 pid_descend, pid_ascend = depth_controller.get_output()
                 descend = pid_descend
                 ascend = pid_ascend
 
-            # Set thrust vector and get resulting duty cycles
-            # (returns zeros if E-stop is engaged)
+            # Heading hold: override yaw with PID output
+            if heading_controller.enabled:
+                yaw = heading_controller.get_output()
+
+            # Position hold: override surge/sway with velocity-damping output
+            if position_controller.enabled:
+                surge, sway = position_controller.get_output()
+
             duties = pwm_motor.set_thrust_vector(surge, sway, yaw, descend, ascend)
 
             return jsonify({
                 "success": True,
                 "duties": {str(k): round(v, 3) for k, v in duties.items()},
                 "depth_hold_active": depth_controller.enabled,
+                "heading_hold_active": heading_controller.enabled,
+                "position_hold_active": position_controller.enabled,
                 "estop_locked": pwm_motor.get_estop_state()
             })
 
@@ -414,7 +419,6 @@ def init_app(app):
             ki = data.get('ki')
             kd = data.get('kd')
 
-            # Validate PID gain ranges to prevent dangerous oscillation
             PID_LIMITS = {'kp': (0.0, 5.0), 'ki': (0.0, 2.0), 'kd': (0.0, 5.0)}
             errors = []
             if kp is not None:
@@ -442,3 +446,159 @@ def init_app(app):
         except Exception as e:
             log(f"[DEPTH] Tune error: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
+
+    # ==========================================================================
+    # HEADING HOLD PID CONTROL
+    # ==========================================================================
+
+    @app.route("/heading_hold/enable", methods=["POST"])
+    def heading_hold_enable():
+        try:
+            if pwm_motor.get_estop_state():
+                return jsonify({"success": False, "error": "Cannot enable heading hold while E-stop is engaged"}), 400
+            data = request.get_json(silent=True)
+            target = data.get('target_heading') if data else None
+            if not heading_controller.enabled:
+                heading_controller.enable()
+            if target is not None:
+                heading_controller.set_target(float(target))
+            return jsonify({"success": True, "status": heading_controller.get_status()})
+        except Exception as e:
+            log(f"[HEADING] Enable error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/heading_hold/disable", methods=["POST"])
+    def heading_hold_disable():
+        try:
+            heading_controller.disable()
+            return jsonify({"success": True})
+        except Exception as e:
+            log(f"[HEADING] Disable error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/heading_hold/status")
+    def heading_hold_status():
+        return jsonify(heading_controller.get_status())
+
+    @app.route("/heading_hold/tune", methods=["POST"])
+    def heading_hold_tune():
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "No JSON data received"}), 400
+            kp = float(data['kp']) if 'kp' in data else None
+            ki = float(data['ki']) if 'ki' in data else None
+            kd = float(data['kd']) if 'kd' in data else None
+            heading_controller.set_gains(kp=kp, ki=ki, kd=kd)
+            return jsonify({"success": True, "status": heading_controller.get_status()})
+        except Exception as e:
+            log(f"[HEADING] Tune error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    # ==========================================================================
+    # POSITION HOLD (VELOCITY DAMPING)
+    # ==========================================================================
+
+    @app.route("/position_hold/enable", methods=["POST"])
+    def position_hold_enable():
+        try:
+            if pwm_motor.get_estop_state():
+                return jsonify({"success": False, "error": "Cannot enable position hold while E-stop is engaged"}), 400
+            position_controller.enable()
+            return jsonify({"success": True, "status": position_controller.get_status()})
+        except Exception as e:
+            log(f"[POSHOLD] Enable error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/position_hold/disable", methods=["POST"])
+    def position_hold_disable():
+        try:
+            position_controller.disable()
+            return jsonify({"success": True})
+        except Exception as e:
+            log(f"[POSHOLD] Disable error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/position_hold/status")
+    def position_hold_status():
+        return jsonify(position_controller.get_status())
+
+    # ==========================================================================
+    # MAGNETOMETER CALIBRATION
+    # ==========================================================================
+
+    @app.route("/mag_cal/start", methods=["POST"])
+    def mag_cal_start():
+        """Begin collecting mag samples. Rotate ROV through all orientations."""
+        import sensors as s
+        s.start_mag_cal()
+        return jsonify({"success": True, "message": "Collecting samples — rotate ROV through all orientations, then call /mag_cal/finish"})
+
+    @app.route("/mag_cal/finish", methods=["POST"])
+    def mag_cal_finish():
+        """Stop collection and compute hard/soft iron offsets."""
+        import sensors as s
+        result = s.finish_mag_cal()
+        if result is None:
+            return jsonify({"success": False, "error": "Not enough samples (need ≥50). Rotate more and try again."}), 400
+        hard_iron, soft_iron = result
+        return jsonify({"success": True, "hard_iron": hard_iron, "soft_iron": soft_iron})
+
+    @app.route("/mag_cal/status")
+    def mag_cal_status():
+        import sensors as s
+        with s._mag_cal_lock:
+            collecting = s._mag_cal_collecting
+            count = len(s._mag_cal_samples)
+        with cal_lock:
+            hi = calib.get('mag_hard_iron', [0, 0, 0])
+        return jsonify({
+            "collecting": collecting,
+            "sample_count": count,
+            "hard_iron": hi,
+            "mag_ok": sensor_data.get('mag_ok', False),
+        })
+
+    # ==========================================================================
+    # IMU FUSION TUNING
+    # ==========================================================================
+
+    @app.route("/imu_tune", methods=["POST"])
+    def imu_tune():
+        """Adjust Madgwick beta and DR parameters at runtime."""
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "No JSON data received"}), 400
+
+            import sensors as s
+            from dead_reckoning import dr_estimator
+
+            if 'beta' in data:
+                s.set_madgwick_beta(float(data['beta']))
+
+            damping = data.get('dr_damping')
+            deadzone = data.get('dr_deadzone')
+            if damping is not None or deadzone is not None:
+                dr_estimator.set_params(
+                    damping=float(damping) if damping is not None else None,
+                    deadzone=float(deadzone) if deadzone is not None else None,
+                )
+
+            return jsonify({
+                "success": True,
+                "beta": s._beta,
+                "dr_damping": dr_estimator.damping,
+                "dr_deadzone": dr_estimator.deadzone,
+            })
+        except Exception as e:
+            log(f"[IMU] Tune error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/dr/reset", methods=["POST"])
+    def dr_reset():
+        """Reset server-side dead reckoning to origin."""
+        from dead_reckoning import dr_estimator
+        dr_estimator.reset()
+        sensor_data.update({'dr_x': 0.0, 'dr_y': 0.0, 'dr_vx': 0.0, 'dr_vy': 0.0})
+        return jsonify({"success": True})
