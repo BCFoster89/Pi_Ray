@@ -17,11 +17,13 @@ from camera_module import (
 from depth_hold import depth_controller
 from heading_hold import heading_controller
 from position_hold import position_controller
+import servo
 
 # Wire all hold controllers to respect E-stop state (avoids circular import)
 depth_controller.set_estop_check(pwm_motor.get_estop_state)
 heading_controller.set_estop_check(pwm_motor.get_estop_state)
 position_controller.set_estop_check(pwm_motor.get_estop_state)
+servo.init()
 
 # This function will be called by main.py to attach routes to the Flask app.
 def init_app(app):
@@ -56,6 +58,12 @@ def init_app(app):
             pwm_motor.emergency_stop()
         except Exception as e:
             log(f"[MOTOR] PWM emergency stop failed: {e}")
+
+        # Center camera tilt on E-stop
+        try:
+            servo.center()
+        except Exception as e:
+            log(f"[SERVO] Center on E-stop failed: {e}")
 
         # Disable all hold controllers so PIDs don't fight the E-stop
         for ctrl, name in [(depth_controller, "Depth"), (heading_controller, "Heading"),
@@ -362,6 +370,18 @@ def init_app(app):
     def camera_focus_status():
         """Get current camera focus status."""
         return jsonify(get_focus_status())
+
+    @app.route("/camera/tilt", methods=["POST"])
+    def camera_tilt():
+        """Set camera tilt servo position. value: -1.0 = full up, +1.0 = full down."""
+        data = request.get_json(silent=True) or {}
+        value = float(data.get('value', 0.0))
+        servo.set_tilt(value)
+        return jsonify({"success": True, "tilt": servo.get_tilt()})
+
+    @app.route("/camera/tilt_status")
+    def camera_tilt_status():
+        return jsonify({"tilt": servo.get_tilt()})
 
     # ==========================================================================
     # DEPTH HOLD PID CONTROL

@@ -69,10 +69,11 @@ HEARTBEAT_INTERVAL = 0.5  # Send heartbeat every 500ms
 # STATE TRACKING
 # =============================================================================
 last_sent = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
-smoothed = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
+smoothed = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0, 'tilt': 0.0}
 previous_buttons = [0] * controller.get_numbuttons()
 estop_active = False       # Local tracking of E-stop state
 last_heartbeat_time = 0.0  # Last time a heartbeat was sent
+last_tilt_sent = 0.0       # Last tilt value sent to ROV
 
 
 def apply_deadband(value, deadband=DEADBAND):
@@ -106,9 +107,9 @@ def read_axes():
 
     # Read raw axis values for sticks
     left_x  = controller.get_axis(AXIS_MAP['left_x'])
+    left_y  = controller.get_axis(AXIS_MAP['left_y'])
     right_x = controller.get_axis(AXIS_MAP['right_x'])
     right_y = controller.get_axis(AXIS_MAP['right_y'])
-    # left_y is unused
 
     # Read and normalize triggers: LT = ascend, RT = descend
     try:
@@ -130,13 +131,17 @@ def read_axes():
     ascend_raw  = ascend_raw  if ascend_raw  > DEADBAND else 0.0
     descend_raw = descend_raw if descend_raw > DEADBAND else 0.0
 
+    # Camera tilt: left stick Y — push up = tilt up (negative Y → negative tilt)
+    tilt_raw = apply_deadband(-left_y)
+
     # Apply smoothing
     return {
-        'surge': smooth_value('surge', surge_raw),
-        'sway': smooth_value('sway', sway_raw),
-        'yaw': smooth_value('yaw', yaw_raw),
+        'surge':   smooth_value('surge',   surge_raw),
+        'sway':    smooth_value('sway',    sway_raw),
+        'yaw':     smooth_value('yaw',     yaw_raw),
         'descend': smooth_value('descend', descend_raw),
-        'ascend': smooth_value('ascend', ascend_raw)
+        'ascend':  smooth_value('ascend',  ascend_raw),
+        'tilt':    smooth_value('tilt',    tilt_raw),
     }
 
 
@@ -228,8 +233,9 @@ def print_status(values):
     yaw = values['yaw']
     descend = values['descend']
     ascend = values['ascend']
+    tilt = values['tilt']
     estop_tag = " [E-STOP]" if estop_active else ""
-    print(f"\rSurge: {surge:+.2f} | Sway: {sway:+.2f} | Yaw: {yaw:+.2f} | Desc: {descend:.2f} | Asc: {ascend:.2f}{estop_tag}  ", end='')
+    print(f"\rSurge: {surge:+.2f} | Sway: {sway:+.2f} | Yaw: {yaw:+.2f} | Desc: {descend:.2f} | Asc: {ascend:.2f} | Tilt: {tilt:+.2f}{estop_tag}  ", end='')
 
 
 # =============================================================================
@@ -241,6 +247,7 @@ print("Controls:")
 print("  Right stick Y : Forward / Backward (surge)")
 print("  Right stick X : Strafe Left / Right (sway)")
 print("  Left stick X  : Rotate Left / Right (yaw)")
+print("  Left stick Y  : Camera Tilt (up/down)")
 print("  Left trigger  : Ascend (0-100%)")
 print("  Right trigger : Descend (0-100%)")
 print("  B button      : EMERGENCY STOP (latching)")
@@ -270,6 +277,16 @@ try:
             # While E-stop is active, keep smoothed values at zero
             for key in smoothed:
                 smoothed[key] = 0.0
+
+        # Camera tilt — independent of E-stop (tilt is always active)
+        global last_tilt_sent
+        tilt = values['tilt']
+        if abs(tilt - last_tilt_sent) > CHANGE_THRESHOLD:
+            try:
+                requests.post(f"{BASE_URL}/camera/tilt", json={'value': tilt}, timeout=0.2)
+                last_tilt_sent = tilt
+            except Exception as e:
+                print(f"Tilt error: {e}")
 
         time.sleep(SEND_INTERVAL)
 

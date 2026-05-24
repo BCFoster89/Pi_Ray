@@ -227,6 +227,7 @@
           <tr><td>Right Stick Y</td><td>Surge — Forward / Backward</td></tr>
           <tr><td>Right Stick X</td><td>Sway — Strafe Left / Right</td></tr>
           <tr><td>Left Stick X</td><td>Yaw — Rotate Left / Right</td></tr>
+          <tr><td>Left Stick Y</td><td>Camera Tilt — Up / Down</td></tr>
           <tr><td>Left Trigger (LT)</td><td>Ascend (0–100%)</td></tr>
           <tr><td>Right Trigger (RT)</td><td>Descend (0–100%)</td></tr>
           <tr><td>B Button</td><td>Emergency Stop (latching)</td></tr>
@@ -294,6 +295,14 @@
           <tr><td><b>Zero IMU</b></td><td>Resets gyro/accel bias offset (hold ROV still first).</td></tr>
           <tr><td><b>Toggle LED</b></td><td>Turns the ROV's LED lighting on or off.</td></tr>
           <tr><td><b>Mag Cal</b></td><td>Collects ~500 magnetometer samples while you rotate the ROV through all orientations, then fits hard-iron offsets and soft-iron scale. Saves to <code>calibration.json</code>. Do this before using heading hold.</td></tr>
+        </table>
+
+        <h3>Camera Tilt</h3>
+        <p>Servo on GPIO 18 (hardware PWM, 50 Hz). Push left stick up to tilt camera up, down to tilt camera down. Servo returns to center on E-stop.</p>
+        <table class="info-table">
+          <tr><td><b>Center</b></td><td>7.5% duty cycle — neutral position (~1.5 ms pulse).</td></tr>
+          <tr><td><b>Range</b></td><td>±1.5% duty from center — approx ±27° of tilt.</td></tr>
+          <tr><td><b>Tune</b></td><td>Adjust <code>SERVO_CENTER</code> and <code>SERVO_RANGE</code> in <code>servo.py</code> if the neutral position or travel range needs correction.</td></tr>
         </table>
 
         <h3>Camera Focus</h3>
