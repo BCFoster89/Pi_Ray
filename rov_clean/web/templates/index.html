@@ -244,29 +244,56 @@
           <tr><td>Ascend</td><td>Not installed (placeholder)</td></tr>
         </table>
 
+        <h3>Sensor Suite (9-DOF)</h3>
+        <p>Three sensors share the I2C bus. The system degrades gracefully — if a sensor is missing, the filter falls back automatically.</p>
+        <table class="info-table">
+          <tr><td>LSM6DSO (0x6B)</td><td>Accelerometer + gyroscope — roll, pitch, angular rate</td></tr>
+          <tr><td>LPS28 (0x5D)</td><td>Barometric pressure — depth in feet</td></tr>
+          <tr><td>MMC5603 (0x30)</td><td>Magnetometer — absolute compass heading (yaw reference)</td></tr>
+        </table>
+
+        <h3>Attitude Filter (Madgwick)</h3>
+        <p>Replaces the old complementary filter. Uses gyro + accel + mag together as a quaternion to produce drift-free roll, pitch, and yaw at 20 Hz.</p>
+        <table class="info-table">
+          <tr><td><b>Beta (β)</b></td><td>Controls how aggressively the filter corrects toward accel/mag. Lower = smoother but slower to level. Default 0.1; try 0.033 if the horizon jumps.</td></tr>
+          <tr><td>Tune via API</td><td><code>POST /imu_tune {"beta": 0.033}</code> — takes effect immediately, no restart.</td></tr>
+          <tr><td>6-DOF fallback</td><td>If MMC5603 is absent, filter runs without mag — yaw will drift over time.</td></tr>
+        </table>
+
         <h3>Dead Reckoning (DR) Map</h3>
-        <p>Estimates position by integrating gravity-compensated IMU acceleration. Accuracy degrades over time without a position fix.</p>
+        <p>Runs server-side at 20 Hz using quaternion rotation to remove gravity before integrating acceleration into velocity and position. Accuracy degrades over minutes without an external position fix.</p>
         <table class="info-table">
           <tr><td><b>Damp</b> (0.80–1.00)</td><td>Velocity decay per update. Higher = more momentum/glide; lower = stops quickly.</td></tr>
-          <tr><td><b>Dead</b> (0.00–1.00)</td><td>Minimum acceleration threshold. Higher = ignores small vibrations and noise.</td></tr>
-          <tr><td><b>Scale</b> (0.1–5.0)</td><td>Acceleration sensitivity multiplier. Higher = map moves more per unit of movement.</td></tr>
-          <tr><td><b>Reset</b></td><td>Clears position to origin and erases trail history.</td></tr>
+          <tr><td><b>Dead</b> (0.00–1.00)</td><td>Minimum acceleration threshold (m/s²). Higher = ignores small vibrations and noise.</td></tr>
+          <tr><td><b>Scale</b> (0.1–5.0)</td><td>Sensitivity multiplier. Higher = map moves more per unit of movement.</td></tr>
+          <tr><td><b>Reset</b></td><td>Clears position to origin and erases trail on both server and map.</td></tr>
         </table>
 
         <h3>Depth Hold PID</h3>
-        <p>PID controller drives the vertical thrusters to hold a target depth.</p>
+        <p>PID controller drives the vertical thrusters to maintain a target depth. Use <b>Go To</b> to set a specific depth in feet.</p>
         <table class="info-table">
-          <tr><td><b>Kp</b> (0–5)</td><td>Proportional gain — how aggressively thrust corrects depth error. Too high causes oscillation.</td></tr>
+          <tr><td><b>Kp</b> (0–5)</td><td>Proportional gain — corrects depth error. Too high causes oscillation.</td></tr>
           <tr><td><b>Ki</b> (0–2)</td><td>Integral gain — corrects slow persistent drift. Too high causes slow oscillation.</td></tr>
-          <tr><td><b>Kd</b> (0–2)</td><td>Derivative gain — dampens overshoot and oscillation. Too high amplifies sensor noise.</td></tr>
+          <tr><td><b>Kd</b> (0–2)</td><td>Derivative gain — dampens overshoot. Too high amplifies sensor noise.</td></tr>
+          <tr><td><b>Go To</b></td><td>Enables depth hold and sets target to the entered value (ft).</td></tr>
         </table>
 
-        <h3>Calibration Buttons</h3>
+        <h3>Heading Hold PID</h3>
+        <p>Locks the ROV to its compass heading when enabled. Manual yaw input is ignored while active. Handles 360° wrap-around automatically.</p>
         <table class="info-table">
-          <tr><td><b>Zero Depth</b></td><td>Sets the current depth sensor reading as the 0 ft reference.</td></tr>
-          <tr><td><b>Zero Horizon</b></td><td>Levels the artificial horizon — zeroes pitch and roll offsets.</td></tr>
-          <tr><td><b>Zero IMU</b></td><td>Resets gyroscope and accelerometer bias (hold ROV still first).</td></tr>
+          <tr><td><b>Kp</b> (0–10)</td><td>Proportional gain — how hard it fights heading error. Default 1.5.</td></tr>
+          <tr><td><b>Ki</b> (0–2)</td><td>Integral gain — corrects slow yaw bias. Default 0.05.</td></tr>
+          <tr><td><b>Kd</b> (0–5)</td><td>Derivative gain — dampens yaw oscillation. Default 0.3.</td></tr>
+          <tr><td>Requires mag</td><td>Works best with MMC5603 connected and calibrated. In 6-DOF mode yaw drifts, so heading hold will slowly drift too.</td></tr>
+        </table>
+
+        <h3>Calibration</h3>
+        <table class="info-table">
+          <tr><td><b>Zero Depth</b></td><td>Sets the current pressure reading as the 0 ft reference.</td></tr>
+          <tr><td><b>Zero Horizon</b></td><td>Resets the Madgwick quaternion to identity — re-levels roll and pitch from the current position.</td></tr>
+          <tr><td><b>Zero IMU</b></td><td>Resets gyro/accel bias offset (hold ROV still first).</td></tr>
           <tr><td><b>Toggle LED</b></td><td>Turns the ROV's LED lighting on or off.</td></tr>
+          <tr><td><b>Mag Cal</b></td><td>Collects ~500 magnetometer samples while you rotate the ROV through all orientations, then fits hard-iron offsets and soft-iron scale. Saves to <code>calibration.json</code>. Do this before using heading hold.</td></tr>
         </table>
 
         <h3>Camera Focus</h3>
