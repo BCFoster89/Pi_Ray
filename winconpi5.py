@@ -34,12 +34,12 @@ BASE_URL = "http://192.168.4.31:5000"
 # Axis 5: Right trigger (released=0, pressed=1)
 
 AXIS_MAP = {
-    'left_x': 0,     # Left stick horizontal (strafe/sway)
-    'left_y': 1,     # Left stick vertical (forward/surge)
-    'right_x': 2,    # Right stick horizontal (yaw/rotation)
-    'right_y': 3,    # Right stick vertical (unused)
-    'lt': 4,         # Left trigger (descend)
-    'rt': 5,         # Right trigger (ascend)
+    'left_x': 0,     # Left stick horizontal (yaw/rotation)
+    'left_y': 1,     # Left stick vertical (unused)
+    'right_x': 2,    # Right stick horizontal (strafe/sway)
+    'right_y': 3,    # Right stick vertical (forward/surge)
+    'lt': 4,         # Left trigger (ascend)
+    'rt': 5,         # Right trigger (descend)
 }
 
 # Trigger calibration - adjust these based on your controller
@@ -47,15 +47,14 @@ AXIS_MAP = {
 TRIGGER_MIN = 0.0    # Value when trigger is released
 TRIGGER_MAX = 1.0    # Value when trigger is fully pressed
 
-# Button mapping
+# Button mapping (pygame Xbox indices: A=0, B=1, X=2, Y=3, LB=4, RB=5, Back=6, Start=7)
 BUTTON_MAP = {
-    7: 'lights',     # Start button -> toggle LED
-    6: 'estop',      # Back button -> emergency stop (LATCH ON)
+    3: 'lights',     # Y button -> toggle LED
+    1: 'estop',      # B button -> emergency stop (LATCH ON)
 }
 
-# E-stop release requires BOTH bumpers pressed simultaneously
-BUMPER_LEFT = 4      # Left bumper (LB)
-BUMPER_RIGHT = 5     # Right bumper (RB)
+# E-stop release: Start button (single press)
+ESTOP_RELEASE_BTN = 7   # Start button
 
 # =============================================================================
 # CONFIGURATION
@@ -106,30 +105,30 @@ def read_axes():
     pygame.event.pump()
 
     # Read raw axis values for sticks
-    left_x = controller.get_axis(AXIS_MAP['left_x'])
-    left_y = controller.get_axis(AXIS_MAP['left_y'])
+    left_x  = controller.get_axis(AXIS_MAP['left_x'])
     right_x = controller.get_axis(AXIS_MAP['right_x'])
+    right_y = controller.get_axis(AXIS_MAP['right_y'])
+    # left_y is unused
 
-    # Read and normalize triggers
-    # Triggers are separate: LT = descend, RT = ascend
+    # Read and normalize triggers: LT = ascend, RT = descend
     try:
         lt_raw = controller.get_axis(AXIS_MAP['lt'])
         rt_raw = controller.get_axis(AXIS_MAP['rt'])
 
-        descend_raw = normalize_trigger(lt_raw)
-        ascend_raw = normalize_trigger(rt_raw)
+        ascend_raw  = normalize_trigger(lt_raw)
+        descend_raw = normalize_trigger(rt_raw)
     except (pygame.error, IndexError):
+        ascend_raw  = 0.0
         descend_raw = 0.0
-        ascend_raw = 0.0
 
     # Apply deadband to stick axes
-    surge_raw = apply_deadband(-left_y)   # Invert Y: push up = forward = positive
-    sway_raw = apply_deadband(left_x)     # Right = positive sway
-    yaw_raw = apply_deadband(right_x)     # Right = positive yaw (turn right)
+    surge_raw = apply_deadband(-right_y)  # Invert Y: push up = forward = positive
+    sway_raw  = apply_deadband(right_x)   # Right stick X → strafe right = positive
+    yaw_raw   = apply_deadband(left_x)    # Left stick X → turn right = positive
 
     # Apply deadband to triggers (already 0-1 range)
+    ascend_raw  = ascend_raw  if ascend_raw  > DEADBAND else 0.0
     descend_raw = descend_raw if descend_raw > DEADBAND else 0.0
-    ascend_raw = ascend_raw if ascend_raw > DEADBAND else 0.0
 
     # Apply smoothing
     return {
@@ -189,14 +188,10 @@ def check_buttons():
     global previous_buttons, estop_active
     buttons = [controller.get_button(i) for i in range(controller.get_numbuttons())]
 
-    # --- E-STOP RELEASE: Both bumpers pressed simultaneously ---
-    lb_pressed = buttons[BUMPER_LEFT] if BUMPER_LEFT < len(buttons) else 0
-    rb_pressed = buttons[BUMPER_RIGHT] if BUMPER_RIGHT < len(buttons) else 0
-    lb_was = previous_buttons[BUMPER_LEFT] if BUMPER_LEFT < len(previous_buttons) else 0
-    rb_was = previous_buttons[BUMPER_RIGHT] if BUMPER_RIGHT < len(previous_buttons) else 0
-
-    # Detect both bumpers being held simultaneously (rising edge of the combo)
-    if estop_active and lb_pressed and rb_pressed and not (lb_was and rb_was):
+    # --- E-STOP RELEASE: Start button (rising edge) ---
+    start_now = buttons[ESTOP_RELEASE_BTN] if ESTOP_RELEASE_BTN < len(buttons) else 0
+    start_was = previous_buttons[ESTOP_RELEASE_BTN] if ESTOP_RELEASE_BTN < len(previous_buttons) else 0
+    if estop_active and start_now and not start_was:
         try:
             r = requests.post(f"{BASE_URL}/motor/estop_release", timeout=0.5)
             data = r.json()
@@ -217,8 +212,7 @@ def check_buttons():
                 elif action == 'estop':
                     r = requests.get(f"{BASE_URL}/motor/all_stop", timeout=0.5)
                     estop_active = True
-                    print("\n*** EMERGENCY STOP ENGAGED — press both bumpers to release ***")
-                    # Reset smoothed values
+                    print("\n*** EMERGENCY STOP ENGAGED — press Start to release ***")
                     for key in smoothed:
                         smoothed[key] = 0.0
             except Exception as e:
@@ -244,14 +238,14 @@ def print_status(values):
 print(f"\nPWM Controller ready. Sending to: {BASE_URL}")
 print("=" * 60)
 print("Controls:")
-print("  Left stick Y  : Forward / Backward (surge)")
-print("  Left stick X  : Strafe Left / Right (sway)")
-print("  Right stick X : Rotate Left / Right (yaw)")
-print("  Left trigger  : Descend (0-100%)")
-print("  Right trigger : Ascend (0-100%)")
-print("  Back button   : EMERGENCY STOP (latching)")
-print("  LB + RB       : Release E-Stop")
-print("  Start button  : Toggle LED")
+print("  Right stick Y : Forward / Backward (surge)")
+print("  Right stick X : Strafe Left / Right (sway)")
+print("  Left stick X  : Rotate Left / Right (yaw)")
+print("  Left trigger  : Ascend (0-100%)")
+print("  Right trigger : Descend (0-100%)")
+print("  B button      : EMERGENCY STOP (latching)")
+print("  Start button  : Release E-Stop")
+print("  Y button      : Toggle LED")
 print("=" * 60)
 print(f"Trigger calibration: min={TRIGGER_MIN}, max={TRIGGER_MAX}")
 print("\nPress Ctrl+C to exit\n")
