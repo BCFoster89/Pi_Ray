@@ -31,11 +31,6 @@
       <pre id="telemetry"></pre>
     </div>
 
-    <div class="card hud-card" id="depthCard">
-      <h3>Depth</h3>
-      <div id="depthDisplay" class="depth-display">-- ft</div>
-    </div>
-
     <div class="card hud-card" id="drMapCard">
       <h3>DR Position</h3>
       <canvas id="drMapCanvas"></canvas>
@@ -178,15 +173,6 @@
     </div>
 
     <div class="card hud-card">
-      <h3>Position Hold</h3>
-      <div class="button-grid">
-        <button id="positionHoldBtn" onclick="togglePositionHold()">Station Keep</button>
-      </div>
-      <div id="positionHoldStatus" class="depth-hold-status"></div>
-      <small style="color:#8cf;font-size:9px;display:block;margin-top:4px;">Velocity damping — ~15–30s hold without DVL/GPS</small>
-    </div>
-
-    <div class="card hud-card">
       <h3>Calibration</h3>
       <div class="button-grid">
         <button onclick="calibrateDepth()">Zero Depth</button>
@@ -214,6 +200,11 @@
 
     <button class="emergency-stop" id="estopBtn" onclick="emergencyStop()">ALL STOP</button>
     <button class="info-btn" id="infoBtn" onclick="showInfo()">&#9432; INFO</button>
+  </div>
+
+  <!-- Depth Overlay (centered bottom) -->
+  <div id="depthOverlay">
+    <div id="depthDisplay" class="depth-display">-- ft</div>
   </div>
 
   <!-- Info Modal -->
