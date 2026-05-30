@@ -4,14 +4,14 @@ from logger import log
 
 # Hardware config
 # Horizontal thrusters: 8, 12, 13, 16
-# Vertical thrusters: 6, 20 (descend only — ascend hardware not installed)
+# Vertical thrusters: descend 6, 20 — ascend 15, 18 (same motors, polarity reversed)
 horizontal_pins = [8, 12, 13, 16]
 descend_pins = [6, 20]
-# ascend_pins = []  # NOT INSTALLED — assign real GPIO pins when hardware is added
-ASCEND_INSTALLED = False
+ascend_pins = [15, 18]
+ASCEND_INSTALLED = True
 
 # motor_pins only includes pins that physically exist on the board
-motor_pins = horizontal_pins + descend_pins
+motor_pins = horizontal_pins + descend_pins + ascend_pins
 
 led_pin = 24
 led_state = False
@@ -60,7 +60,7 @@ PWM_CONFIG = {
 #
 # Vertical thrusters:
 #   Descend: pins 6, 20
-#   Ascend:  NOT INSTALLED — assign real pins when hardware is added
+#   Ascend:  pins 15, 18 (same motors as descend, polarity reversed)
 
 # Thrust mixing matrix for horizontal thrusters
 # Each motor's contribution to surge (forward/back), sway (strafe), yaw (rotation)
@@ -85,8 +85,11 @@ DESCEND_MIX = {
     20: 1.0,   # Descend motor 2
 }
 
-# Ascend motors — empty until hardware is installed
-ASCEND_MIX = {}
+# Ascend motors (right trigger) - pins 15, 18
+ASCEND_MIX = {
+    15: 1.0,  # Ascend motor 1
+    18: 1.0,  # Ascend motor 2
+}
 
 # Current PWM state (duty cycles for each motor, 0.0-1.0)
 pwm_state = {
@@ -120,9 +123,6 @@ GPIO.output(led_pin, GPIO.LOW)
 # Leak sensor - input with pull-up (active LOW when wet)
 GPIO.setup(leak_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 # Setup only real motor pins
-for p in horizontal_pins + descend_pins:
+for p in horizontal_pins + descend_pins + ascend_pins:
     GPIO.setup(p, GPIO.OUT)
     GPIO.output(p, GPIO.LOW)
-
-if not ASCEND_INSTALLED:
-    log("[CONFIG] Ascend motors not configured — right trigger input ignored")

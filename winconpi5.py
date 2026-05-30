@@ -279,7 +279,6 @@ try:
                 smoothed[key] = 0.0
 
         # Camera tilt — independent of E-stop (tilt is always active)
-        global last_tilt_sent
         tilt = values['tilt']
         if abs(tilt - last_tilt_sent) > CHANGE_THRESHOLD:
             try:

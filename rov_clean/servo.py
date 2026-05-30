@@ -1,10 +1,10 @@
 # servo.py
-"""Camera tilt servo controller — GPIO 18, hardware PWM, 50 Hz."""
+"""Camera tilt servo controller — GPIO 14, hardware PWM, 50 Hz."""
 import threading
 import RPi.GPIO as GPIO
 from logger import log
 
-SERVO_PIN    = 18    # GPIO BCM pin — servo signal wire
+SERVO_PIN    = 14    # GPIO BCM pin — servo signal wire
 SERVO_FREQ   = 50    # Hz — standard hobby servo
 SERVO_CENTER = 7.5   # Duty % → ~1.5 ms pulse → neutral/center tilt
 SERVO_RANGE  = 1.5   # Max duty % offset → ±1.0 input ≈ ±27° from center

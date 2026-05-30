@@ -4,7 +4,7 @@ import threading
 import RPi.GPIO as GPIO
 from gpiozero import PWMOutputDevice
 from logger import log
-from config import (motor_pins, horizontal_pins, descend_pins,
+from config import (motor_pins, horizontal_pins, descend_pins, ascend_pins,
                     MOTOR_GROUPS, MAX_ACTIVE_GROUPS, GROUP_STAGGER_S,
                     MIN_ACTIVATE_INTERVAL_S, THRUST_MIX, DESCEND_MIX, ASCEND_MIX,
                     PWM_CONFIG, pwm_state)
@@ -59,7 +59,7 @@ class PWMMotorController:
     """PWM-based motor controller for proportional vectored thrust control."""
 
     # Pins that actually exist on the Pi (exclude placeholders like 1, 2)
-    REAL_PINS = horizontal_pins + descend_pins
+    REAL_PINS = horizontal_pins + descend_pins + ascend_pins
 
     def __init__(self):
         self.lock = threading.Lock()
