@@ -15,14 +15,11 @@
   <!-- Left Side Controls (under artificial horizon) -->
   <div id="controls-left">
     <div class="card hud-card" id="statusCard">
-      <h3>Status</h3>
       <div class="status-row">
         <button id="statusBtn">Pi: UNKNOWN</button>
         <button id="leakBtn" class="leak-ok">HULL: OK</button>
-      </div>
-      <div class="status-row" style="margin-top:4px;">
         <span id="latencyIndicator" class="latency-indicator">--ms</span>
-        <span id="sensorStatus" class="sensor-indicator">SENSORS: --</span>
+        <span id="sensorStatus" class="sensor-indicator">SENS: --</span>
       </div>
     </div>
 
@@ -62,6 +59,7 @@
       <h3>Attitude</h3>
       <canvas id="ahCanvas"></canvas>
     </div>
+    <button class="info-btn" id="infoBtn" onclick="showInfo()">&#9432; INFO</button>
   </div>
 
   <!-- Right Side Controls -->
@@ -123,62 +121,53 @@
     </div>
 
     <div class="card hud-card">
-      <h3>Depth Hold</h3>
-      <div class="button-grid">
-        <button id="depthHoldBtn" onclick="toggleDepthHold()">Depth Hold</button>
+      <div class="hold-header">
+        <span class="hold-title">Depth Hold</span>
+        <button id="depthHoldBtn" class="hold-toggle-btn" onclick="toggleDepthHold()">OFF</button>
       </div>
       <div class="go-to-depth">
         <input type="number" id="targetDepthInput" placeholder="ft" step="0.5" min="0" max="100">
         <button id="goToDepthBtn" onclick="goToDepth()">Go To</button>
       </div>
       <div id="depthHoldStatus" class="depth-hold-status"></div>
-      <div class="pid-tuning" id="pidTuning">
-        <div class="pid-row">
-          <label>Kp:</label>
-          <input type="number" id="pidKp" value="0.5" step="0.1" min="0" max="5">
+      <details class="pid-details">
+        <summary>PID Tuning</summary>
+        <div class="pid-tuning" id="pidTuning">
+          <div class="pid-row-compact">
+            <label>Kp</label><input type="number" id="pidKp" value="0.5" step="0.1" min="0" max="5">
+            <label>Ki</label><input type="number" id="pidKi" value="0.1" step="0.05" min="0" max="2">
+            <label>Kd</label><input type="number" id="pidKd" value="0.2" step="0.05" min="0" max="2">
+          </div>
+          <button onclick="updatePIDGains()">Update</button>
         </div>
-        <div class="pid-row">
-          <label>Ki:</label>
-          <input type="number" id="pidKi" value="0.1" step="0.05" min="0" max="2">
-        </div>
-        <div class="pid-row">
-          <label>Kd:</label>
-          <input type="number" id="pidKd" value="0.2" step="0.05" min="0" max="2">
-        </div>
-        <button onclick="updatePIDGains()">Update PID</button>
-      </div>
+      </details>
     </div>
 
     <div class="card hud-card">
-      <h3>Heading Hold</h3>
-      <div class="button-grid">
-        <button id="headingHoldBtn" onclick="toggleHeadingHold()">Heading Hold</button>
+      <div class="hold-header">
+        <span class="hold-title">Heading Hold</span>
+        <button id="headingHoldBtn" class="hold-toggle-btn" onclick="toggleHeadingHold()">OFF</button>
       </div>
       <div id="headingHoldStatus" class="depth-hold-status"></div>
-      <div class="pid-tuning" id="headingPidTuning">
-        <div class="pid-row">
-          <label>Kp:</label>
-          <input type="number" id="headingKp" value="1.5" step="0.1" min="0" max="10">
+      <details class="pid-details">
+        <summary>PID Tuning</summary>
+        <div class="pid-tuning" id="headingPidTuning">
+          <div class="pid-row-compact">
+            <label>Kp</label><input type="number" id="headingKp" value="1.5" step="0.1" min="0" max="10">
+            <label>Ki</label><input type="number" id="headingKi" value="0.05" step="0.01" min="0" max="2">
+            <label>Kd</label><input type="number" id="headingKd" value="0.3" step="0.05" min="0" max="5">
+          </div>
+          <button onclick="updateHeadingPID()">Update</button>
         </div>
-        <div class="pid-row">
-          <label>Ki:</label>
-          <input type="number" id="headingKi" value="0.05" step="0.01" min="0" max="2">
-        </div>
-        <div class="pid-row">
-          <label>Kd:</label>
-          <input type="number" id="headingKd" value="0.3" step="0.05" min="0" max="5">
-        </div>
-        <button onclick="updateHeadingPID()">Update PID</button>
-      </div>
+      </details>
     </div>
 
     <div class="card hud-card">
-      <h3>Calibration</h3>
-      <div class="button-grid">
+      <div class="button-grid cal-grid">
         <button onclick="calibrateDepth()">Zero Depth</button>
-        <button onclick="calibrateHorizon()">Zero Horizon</button>
+        <button onclick="calibrateHorizon()">Zero Horiz</button>
         <button onclick="zeroIMU()">Zero IMU</button>
-        <button id="ledBtn" onclick="toggleLED()">Toggle LED</button>
+        <button id="ledBtn" onclick="toggleLED()">LED</button>
         <button id="magCalBtn" onclick="toggleMagCal()">Mag Cal</button>
       </div>
       <div id="magCalStatus" class="depth-hold-status"></div>
@@ -199,7 +188,6 @@
     </div>
 
     <button class="emergency-stop" id="estopBtn" onclick="emergencyStop()">ALL STOP</button>
-    <button class="info-btn" id="infoBtn" onclick="showInfo()">&#9432; INFO</button>
   </div>
 
   <!-- Depth Overlay (centered bottom) -->

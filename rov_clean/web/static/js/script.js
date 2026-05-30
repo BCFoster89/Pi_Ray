@@ -250,7 +250,7 @@ async function toggleDepthHold() {
       if (data.success) {
         depthHoldEnabled = true;
         btn.classList.add('active');
-        btn.textContent = 'Release';
+        btn.textContent = 'ON';
         statusEl.textContent = `Holding: ${data.status.target_depth.toFixed(1)} ft`;
       } else {
         statusEl.textContent = data.error || 'Failed';
@@ -260,7 +260,7 @@ async function toggleDepthHold() {
       let r = await fetch('/depth_hold/disable', { method: 'POST' });
       depthHoldEnabled = false;
       btn.classList.remove('active');
-      btn.textContent = 'Depth Hold';
+      btn.textContent = 'OFF';
       statusEl.textContent = '';
     }
   } catch (e) {
@@ -289,7 +289,7 @@ async function goToDepth() {
       depthHoldEnabled = true;
       const btn = document.getElementById('depthHoldBtn');
       btn.classList.add('active');
-      btn.textContent = 'Release';
+      btn.textContent = 'ON';
       const statusEl = document.getElementById('depthHoldStatus');
       statusEl.textContent = `Target: ${data.status.target_depth.toFixed(1)} ft`;
     } else {
@@ -337,11 +337,11 @@ async function pollDepthHoldStatus() {
 
     if (data.enabled) {
       btn.classList.add('active');
-      btn.textContent = 'Release';
+      btn.textContent = 'ON';
       statusEl.textContent = `Target: ${data.target_depth.toFixed(1)} ft | Error: ${data.error.toFixed(2)} ft`;
     } else {
       btn.classList.remove('active');
-      btn.textContent = 'Depth Hold';
+      btn.textContent = 'OFF';
     }
 
     // Only update PID input fields if they are NOT currently focused
@@ -370,7 +370,7 @@ async function toggleHeadingHold() {
       if (data.success) {
         headingHoldEnabled = true;
         btn.classList.add('active');
-        btn.textContent = 'Release';
+        btn.textContent = 'ON';
         statusEl.textContent = `Holding: ${data.status.target_heading.toFixed(0)}°`;
       } else {
         statusEl.textContent = data.error || 'Failed';
@@ -379,7 +379,7 @@ async function toggleHeadingHold() {
       await fetch('/heading_hold/disable', { method: 'POST' });
       headingHoldEnabled = false;
       btn.classList.remove('active');
-      btn.textContent = 'Heading Hold';
+      btn.textContent = 'OFF';
       statusEl.textContent = '';
     }
   } catch (e) {
@@ -414,11 +414,11 @@ async function pollHeadingHoldStatus() {
     headingHoldEnabled = data.enabled;
     if (data.enabled) {
       btn.classList.add('active');
-      btn.textContent = 'Release';
+      btn.textContent = 'ON';
       statusEl.textContent = `Target: ${data.target_heading.toFixed(0)}° | Err: ${data.error.toFixed(1)}°`;
     } else {
       btn.classList.remove('active');
-      btn.textContent = 'Heading Hold';
+      btn.textContent = 'OFF';
     }
     const activeEl = document.activeElement;
     const kpEl = document.getElementById('headingKp');

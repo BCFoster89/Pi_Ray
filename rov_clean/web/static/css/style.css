@@ -162,7 +162,8 @@ button.active {
 /* Status row with Pi status and leak indicator */
 .status-row {
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  align-items: center;
 }
 
 #statusBtn {
@@ -535,19 +536,113 @@ button.active {
 }
 
 /* =============================================================================
+   HOLD MODE HEADER (Depth Hold / Heading Hold compact header row)
+   ============================================================================= */
+
+.hold-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.hold-title {
+  font-size: 12px;
+  color: #8cf;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: bold;
+}
+
+.hold-toggle-btn {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #122;
+  border: 1px solid #08f;
+  color: #8cf;
+}
+
+.hold-toggle-btn.active {
+  background: #08f;
+  color: #fff;
+  border-color: #4af;
+  animation: pulse-blue 1s infinite;
+}
+
+/* Compact inline PID row */
+.pid-row-compact {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.pid-row-compact label {
+  font-size: 10px;
+  color: #8cf;
+  min-width: 14px;
+}
+
+.pid-row-compact input {
+  width: 36px;
+  padding: 2px 3px;
+  font-size: 10px;
+  background: #123;
+  border: 1px solid #0ff;
+  border-radius: 3px;
+  color: #fff;
+}
+
+/* Collapsible PID details */
+.pid-details {
+  margin-top: 6px;
+}
+
+.pid-details summary {
+  font-size: 10px;
+  color: #68a;
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.pid-details summary::-webkit-details-marker { display: none; }
+
+.pid-details summary::before {
+  content: "▶ ";
+  font-size: 8px;
+}
+
+.pid-details[open] summary::before {
+  content: "▼ ";
+}
+
+.pid-details .pid-tuning {
+  margin-top: 4px;
+}
+
+/* Calibration grid — no title, tighter */
+.cal-grid {
+  grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+}
+
+/* =============================================================================
    DEPTH HOLD STYLES
    ============================================================================= */
 
-#depthHoldBtn {
-  background: #024;
+#depthHoldBtn, #headingHoldBtn {
+  background: #122;
   border-color: #08f;
 }
 
-#depthHoldBtn:hover {
+#depthHoldBtn:hover, #headingHoldBtn:hover {
   background: #046;
 }
 
-#depthHoldBtn.active {
+#depthHoldBtn.active, #headingHoldBtn.active {
   background: #08f;
   color: #fff;
   animation: pulse-blue 1s infinite;
@@ -743,14 +838,15 @@ button.active {
 
 .info-btn {
   width: 100%;
-  margin-top: 6px;
-  padding: 7px;
+  margin-top: 4px;
+  padding: 6px;
   background: #014;
   border: 1px solid #08f;
   color: #8cf;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: bold;
   letter-spacing: 1px;
+  box-sizing: border-box;
 }
 
 .info-btn:hover {
