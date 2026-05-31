@@ -113,10 +113,9 @@ def init_app(app):
     def cal_horizon():
         import sensors as s
         with cal_lock:
-            s.reset_orientation()
-            calib['roll_offset'] = 0.0
-            calib['pitch_offset'] = 0.0
-            calib['yaw_offset'] = 0.0
+            calib['roll_offset']  = s._disp_roll
+            calib['pitch_offset'] = s._disp_pitch
+            calib['yaw_offset']   = s._disp_yaw
             log("[CAL] Zero Horizon pressed")
         save_calib()
         return "Horizon Zeroed"

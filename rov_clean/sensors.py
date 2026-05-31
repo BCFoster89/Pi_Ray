@@ -36,7 +36,7 @@ _q_lock = threading.Lock()
 
 # Madgwick filter instance
 _madgwick = None
-_beta = 0.1
+_beta = 1.0
 if _AHRS_OK:
     _madgwick = _MadgwickFilter(frequency=20.0, beta=_beta)
 
@@ -58,8 +58,15 @@ _consecutive_errors = 0
 _MAX_CONSECUTIVE_ERRORS = 10
 
 # Complementary heading filter gain (gyro weight vs. mag absolute reference)
-# 0.98 → ~2.5 s convergence time-constant at 20 Hz
-_COMPASS_ALPHA = 0.98
+# 0.90 → ~0.5 s convergence time-constant at 20 Hz
+_COMPASS_ALPHA = 0.90
+
+# Display-layer EMA smoothing (separate from filter state, so feedback is unaffected)
+# 0.30 at 20 Hz ≈ 250 ms lag — good for slow ROV where stability > refresh rate
+_DISP_ALPHA = 0.30
+_disp_roll  = 0.0
+_disp_pitch = 0.0
+_disp_yaw   = 0.0
 
 # Ferrous object detection — ambient field baseline EMA
 _mag_baseline = None
@@ -71,19 +78,31 @@ last_time = time.time()
 
 
 def reset_orientation():
-    """Reset quaternion and Euler state to identity (called from routes.py on calibration)."""
-    global _q, roll_f, pitch_f, yaw_f, _madgwick
+    """Reset quaternion from current accel reading — no convergence drift after zero."""
+    global _q, roll_f, pitch_f, yaw_f, _madgwick, _disp_roll, _disp_pitch, _disp_yaw
+    ax = sensor_data.get('accel_x', 0.0)
+    ay = sensor_data.get('accel_y', 0.0)
+    az = sensor_data.get('accel_z', 1.0)
+    q_init     = _quat_from_accel(ax, ay, az)
+    roll_init  = math.degrees(math.atan2(ay, az))
+    pitch_init = math.degrees(math.atan2(-ax, math.sqrt(ay**2 + az**2)))
     with _q_lock:
-        _q = np.array([1.0, 0.0, 0.0, 0.0])
-        roll_f = pitch_f = yaw_f = 0.0
+        _q      = q_init
+        roll_f  = roll_init
+        pitch_f = pitch_init
+        yaw_f   = 0.0
+    _disp_roll  = roll_init
+    _disp_pitch = pitch_init
+    _disp_yaw   = 0.0
     if _AHRS_OK:
         _madgwick = _MadgwickFilter(frequency=20.0, beta=_beta)
+        _madgwick.Q = q_init
 
 
 def set_madgwick_beta(beta):
     """Tune the Madgwick beta parameter at runtime."""
     global _beta, _madgwick
-    _beta = max(0.01, min(1.0, float(beta)))
+    _beta = max(0.01, min(10.0, float(beta)))
     if _madgwick is not None:
         _madgwick.beta = _beta
     log(f"[SENSORS] Madgwick beta set to {_beta}")
@@ -162,6 +181,19 @@ def _apply_mag_remap(mx, my, mz):
             raw[idx[2]] * sign[2])
 
 
+def _quat_from_accel(ax, ay, az):
+    """Compute a gravity-referenced quaternion (yaw=0) from an accelerometer reading."""
+    norm = math.sqrt(ax**2 + ay**2 + az**2)
+    if norm < 0.1:
+        return np.array([1.0, 0.0, 0.0, 0.0])
+    ax, ay, az = ax / norm, ay / norm, az / norm
+    roll  = math.atan2(ay, az)
+    pitch = math.atan2(-ax, math.sqrt(ay**2 + az**2))
+    cr, sr = math.cos(roll / 2),  math.sin(roll / 2)
+    cp, sp = math.cos(pitch / 2), math.sin(pitch / 2)
+    return np.array([cp * cr, cp * sr, sp * cr, -sp * sr])
+
+
 def _quat_to_euler(q):
     """Convert quaternion [w, x, y, z] to (roll, pitch, yaw) in degrees."""
     w, x, y, z = q
@@ -204,6 +236,7 @@ def sensor_loop():
     global roll_f, pitch_f, yaw_f, _q, last_time
     global accel_offsets, gyro_offsets, imu_offsets_enabled
     global _last_leak_state, _consecutive_errors, _mag_baseline
+    global _disp_roll, _disp_pitch, _disp_yaw
 
     try:
         i2c = board.I2C()
@@ -347,15 +380,19 @@ def sensor_loop():
                 else:
                     yaw_f += gz * dt
 
-            # ── Apply calibration offsets to Euler output ─────────────────
+            # ── Display smoothing (EMA) — separate from filter state ───────
+            _disp_roll  += _DISP_ALPHA * (roll_f  - _disp_roll)
+            _disp_pitch += _DISP_ALPHA * (pitch_f - _disp_pitch)
+            _yaw_diff    = ((yaw_f - _disp_yaw) + 180.0) % 360.0 - 180.0
+            _disp_yaw   += _DISP_ALPHA * _yaw_diff
+
+            # ── Apply calibration offsets to display output ───────────────
             with cal_lock:
                 ro = calib['roll_offset']
                 po = calib['pitch_offset']
                 yo = calib['yaw_offset']
             with _q_lock:
                 q_snap = _q.copy()
-
-            yaw_display = (yaw_f - yo) % 360.0
 
             # ── Server-side dead reckoning ────────────────────────────────
             dr_estimator.update(q_snap, ax, ay, az, dt)
@@ -376,9 +413,9 @@ def sensor_loop():
                 'accel_x': round(ax, 3), 'accel_y': round(ay, 3), 'accel_z': round(az, 3),
                 'gyro_x': round(gx, 1),  'gyro_y': round(gy, 1),  'gyro_z': round(gz, 1),
                 'imu_temp_f': round(itf, 1),
-                'roll':  round(roll_f  - ro, 1),
-                'pitch': round(pitch_f - po, 1),
-                'yaw':   round(yaw_display, 1),
+                'roll':  round(_disp_roll  - ro, 1),
+                'pitch': round(_disp_pitch - po, 1),
+                'yaw':   round((_disp_yaw  - yo) % 360.0, 1),
                 'mag_x': round(mx_cal, 2), 'mag_y': round(my_cal, 2), 'mag_z': round(mz_cal, 2),
                 'mag_ok': mag is not None,
                 'mag_anomaly': round(mag_anomaly, 2),
