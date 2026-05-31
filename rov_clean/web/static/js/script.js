@@ -1,6 +1,15 @@
 // === DEAD RECKONING STATE ===
 let drState = { x: 0, y: 0, vx: 0, vy: 0, trail: [], lastTime: null };
 
+// === FERROUS ANOMALY PINS ===
+const ferrousPins = [];       // {x, y, strength} in world-frame metres
+const PIN_THRESHOLD_UT = 5.0; // µT deviation to drop a pin
+const PIN_DEBOUNCE_S   = 3.0; // minimum seconds between pins
+const PIN_MIN_DIST_M   = 0.3; // minimum metres moved before a new pin
+let _lastPinTime = 0;
+let _lastPinX    = null;
+let _lastPinY    = null;
+
 // === E-STOP STATE ===
 let estopLocked = false;
 
@@ -562,6 +571,34 @@ async function updateOverlay() {
     const depthEl = document.getElementById('depthDisplay');
     if (depthEl) depthEl.textContent = (sensor.depth_ft || 0).toFixed(1) + ' ft';
 
+    // update ferrous anomaly bar
+    const anomaly = sensor.mag_anomaly || 0;
+    const ferrousFill = document.getElementById('ferrousFill');
+    const ferrousVal  = document.getElementById('ferrousVal');
+    if (ferrousFill && ferrousVal) {
+      const fillPct = Math.min(100, (anomaly / 15.0) * 100);
+      ferrousFill.style.width = fillPct + '%';
+      ferrousFill.style.backgroundColor = anomaly > 10 ? '#f44' : anomaly > 5 ? '#fa0' : '#4af';
+      ferrousVal.textContent = anomaly.toFixed(1) + 'µT';
+    }
+
+    // drop DR map pin at significant magnetic anomaly positions
+    const now = Date.now() / 1000;
+    const px = sensor.dr_x ?? null;
+    const py = sensor.dr_y ?? null;
+    if (anomaly >= PIN_THRESHOLD_UT && px !== null && py !== null) {
+      const dtPin   = now - _lastPinTime;
+      const dxPin   = _lastPinX === null ? Infinity : Math.abs(px - _lastPinX);
+      const dyPin   = _lastPinY === null ? Infinity : Math.abs(py - _lastPinY);
+      const distPin = Math.sqrt(dxPin * dxPin + dyPin * dyPin);
+      if (dtPin > PIN_DEBOUNCE_S || distPin > PIN_MIN_DIST_M) {
+        ferrousPins.push({ x: px, y: py, strength: anomaly });
+        _lastPinTime = now;
+        _lastPinX = px;
+        _lastPinY = py;
+      }
+    }
+
     // dead reckoning update and map draw
     updateDeadReckoning(sensor);
     drawDRMap(sensor);
@@ -933,6 +970,18 @@ function drawDRMap(sensor) {
       ctx.lineTo(p.cx, p.cy);
     }
     ctx.stroke();
+  }
+
+  // Draw ferrous anomaly pins (red/orange diamonds)
+  for (const pin of ferrousPins) {
+    const p = toCanvas(pin.x, pin.y);
+    const s = Math.min(7, 4 + pin.strength / 5);
+    ctx.save();
+    ctx.translate(p.cx, p.cy);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = pin.strength > 10 ? '#f44' : '#fa0';
+    ctx.fillRect(-s / 2, -s / 2, s, s);
+    ctx.restore();
   }
 
   // Draw current position dot

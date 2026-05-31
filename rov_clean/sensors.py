@@ -60,6 +60,10 @@ _MAX_CONSECUTIVE_ERRORS = 10
 # MARG/IMU mode hysteresis flag (enter MARG above 2 µT, drop below 0.5 µT)
 _using_marg = False
 
+# Ferrous object detection — ambient field baseline EMA
+_mag_baseline = None
+_MAG_BASELINE_ALPHA = 0.999  # ~50 s time-constant at 20 Hz
+
 # Complementary filter fallback (used only when ahrs not available)
 _alpha_c = 0.98
 last_time = time.time()
@@ -187,7 +191,7 @@ def _init_mag(i2c_bus):
 def sensor_loop():
     global roll_f, pitch_f, yaw_f, _q, last_time
     global accel_offsets, gyro_offsets, imu_offsets_enabled
-    global _last_leak_state, _consecutive_errors, _using_marg
+    global _last_leak_state, _consecutive_errors, _using_marg, _mag_baseline
 
     try:
         i2c = board.I2C()
@@ -266,6 +270,16 @@ def sensor_loop():
             mag_cal  = np.array([mx_cal, my_cal, mz_cal])
             mag_norm = np.linalg.norm(mag_cal)
 
+            # ── Ferrous anomaly baseline (slow EMA, excludes Earth field) ────
+            mag_anomaly = 0.0
+            if mag is not None and mag_norm > 0.5:
+                if _mag_baseline is None:
+                    _mag_baseline = mag_norm
+                else:
+                    _mag_baseline = (_MAG_BASELINE_ALPHA * _mag_baseline
+                                     + (1 - _MAG_BASELINE_ALPHA) * mag_norm)
+                mag_anomaly = abs(mag_norm - _mag_baseline)
+
             with _q_lock:
                 q_in = _q.copy()
 
@@ -331,6 +345,8 @@ def sensor_loop():
                 'yaw':   round(yaw_display, 1),
                 'mag_x': round(mx_cal, 2), 'mag_y': round(my_cal, 2), 'mag_z': round(mz_cal, 2),
                 'mag_ok': mag is not None,
+                'mag_anomaly': round(mag_anomaly, 2),
+                'mag_baseline': round(_mag_baseline or 0.0, 1),
                 'quat_w': round(float(q_snap[0]), 4),
                 'quat_x': round(float(q_snap[1]), 4),
                 'quat_y': round(float(q_snap[2]), 4),

@@ -821,6 +821,39 @@ button.active {
     0 2px 6px rgba(0, 0, 0, 0.95);
 }
 
+#ferrousBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.ferrous-label {
+  font-size: 11px;
+  font-family: "Courier New", monospace;
+  color: #4af;
+  min-width: 42px;
+  text-shadow: 0 0 6px rgba(68, 170, 255, 0.7);
+}
+
+#ferrousTrack {
+  width: 100px;
+  height: 7px;
+  background: #1a1a2a;
+  border: 1px solid #334;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#ferrousFill {
+  height: 100%;
+  width: 0%;
+  background: #4af;
+  border-radius: 4px;
+  transition: width 0.25s, background-color 0.25s;
+}
+
 /* =============================================================================
    ATTITUDE (ARTIFICIAL HORIZON) CANVAS CARD
    ============================================================================= */
