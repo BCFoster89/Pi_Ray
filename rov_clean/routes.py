@@ -605,11 +605,22 @@ def init_app(app):
                     deadzone=float(deadzone) if deadzone is not None else None,
                 )
 
+            if 'mag_axis_map' in data:
+                with cal_lock:
+                    calib['mag_axis_map'] = [int(x) for x in data['mag_axis_map']]
+                save_calib()
+            if 'mag_axis_sign' in data:
+                with cal_lock:
+                    calib['mag_axis_sign'] = [int(x) for x in data['mag_axis_sign']]
+                save_calib()
+
             return jsonify({
                 "success": True,
                 "beta": s._beta,
                 "dr_damping": dr_estimator.damping,
                 "dr_deadzone": dr_estimator.deadzone,
+                "mag_axis_map":  calib.get('mag_axis_map',  [0, 1, 2]),
+                "mag_axis_sign": calib.get('mag_axis_sign', [1, 1, 1]),
             })
         except Exception as e:
             log(f"[IMU] Tune error: {e}")

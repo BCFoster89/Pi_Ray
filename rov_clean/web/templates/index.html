@@ -246,12 +246,12 @@
           <tr><td>MMC5603 (0x30)</td><td>Magnetometer — absolute compass heading (yaw reference)</td></tr>
         </table>
 
-        <h3>Attitude Filter (Madgwick)</h3>
-        <p>Replaces the old complementary filter. Uses gyro + accel + mag together as a quaternion to produce drift-free roll, pitch, and yaw at 20 Hz.</p>
+        <h3>Attitude Filter (Hybrid)</h3>
+        <p>Pitch and roll use Madgwick 6-DOF (gyro + accelerometer only) — immune to magnetometer axis errors. Heading uses a <b>tilt-compensated compass</b>: the mag vector is rotated to horizontal using the known pitch/roll, then blended with gyro yaw integration via a complementary filter (α = 0.98).</p>
         <table class="info-table">
-          <tr><td><b>Beta (β)</b></td><td>Controls how aggressively the filter corrects toward accel/mag. Lower = smoother but slower to level. Default 0.1; try 0.033 if the horizon jumps.</td></tr>
+          <tr><td><b>Beta (β)</b></td><td>Controls how aggressively the Madgwick filter corrects pitch/roll toward gravity. Default 0.1; try 0.033 if the horizon drifts.</td></tr>
           <tr><td>Tune via API</td><td><code>POST /imu_tune {"beta": 0.033}</code> — takes effect immediately, no restart.</td></tr>
-          <tr><td>6-DOF fallback</td><td>If MMC5603 is absent, filter runs without mag — yaw will drift over time.</td></tr>
+          <tr><td>No-mag fallback</td><td>If MMC5603 is absent or reads below 1 µT, heading is gyro-only and will drift slowly.</td></tr>
         </table>
 
         <h3>Dead Reckoning (DR) Map</h3>
@@ -287,7 +287,24 @@
           <tr><td><b>Zero Horizon</b></td><td>Resets the Madgwick quaternion to identity — re-levels roll and pitch from the current position.</td></tr>
           <tr><td><b>Zero IMU</b></td><td>Resets gyro/accel bias offset (hold ROV still first).</td></tr>
           <tr><td><b>Toggle LED</b></td><td>Turns the ROV's LED lighting on or off.</td></tr>
-          <tr><td><b>Mag Cal</b></td><td>Collects ~500 magnetometer samples while you rotate the ROV through all orientations, then fits hard-iron offsets and soft-iron scale. Saves to <code>calibration.json</code>. Do this before using heading hold.</td></tr>
+          <tr><td><b>Mag Cal</b></td><td>Collects ~500 magnetometer samples while you rotate the ROV through all orientations, then fits hard-iron offsets and soft-iron scale. Saves to <code>calibration.json</code>. <b>Run this before using heading hold or ferrous detection.</b></td></tr>
+        </table>
+
+        <h3>Magnetometer Axis Alignment</h3>
+        <p>The MMC5603 (Adafruit breakout) and LSM6DSO (SparkFun breakout) are on separate PCBs — their X/Y/Z axes may point in different directions. Without alignment the compass heading will be wrong by a fixed offset or scale error. Pitch and roll are unaffected (they use gravity only).</p>
+        <p><b>How to find the correct map:</b></p>
+        <ol style="margin:4px 0 8px 18px; line-height:1.7;">
+          <li>Hold the ROV <b>flat and level</b>, pointed at magnetic <b>North</b> (use a phone compass).</li>
+          <li>Check the live <b>mag_x, mag_y, mag_z</b> values in the telemetry card.</li>
+          <li>The axis with the <b>largest positive value</b> is your North axis → it should be index <b>0</b> in <code>mag_axis_map</code>.</li>
+          <li>The axis 90 ° clockwise from North (East / right) → index <b>1</b>. The remaining axis → index <b>2</b>.</li>
+          <li>If the North axis reads <b>negative</b>, put <b>-1</b> in the corresponding position of <code>mag_axis_sign</code>.</li>
+        </ol>
+        <table class="info-table">
+          <tr><td><b>Apply via API</b></td><td><code>POST /imu_tune {"mag_axis_map": [1,0,2], "mag_axis_sign": [-1,1,1]}</code> — saves to <code>calibration.json</code> immediately.</td></tr>
+          <tr><td><b>Default</b></td><td><code>mag_axis_map: [0,1,2]</code>, <code>mag_axis_sign: [1,1,1]</code> — identity (no remap). Start here and adjust if heading is wrong.</td></tr>
+          <tr><td><b>Common fix</b></td><td>If heading moves in the wrong direction when turning right, negate the East axis: <code>mag_axis_sign: [1,-1,1]</code>.</td></tr>
+          <tr><td><b>After remapping</b></td><td>Run Mag Cal again (hard/soft-iron calibration) to get the best heading accuracy.</td></tr>
         </table>
 
         <h3>Camera Tilt</h3>

@@ -57,8 +57,9 @@ _mag_cal_lock = threading.Lock()
 _consecutive_errors = 0
 _MAX_CONSECUTIVE_ERRORS = 10
 
-# MARG/IMU mode hysteresis flag (enter MARG above 2 µT, drop below 0.5 µT)
-_using_marg = False
+# Complementary heading filter gain (gyro weight vs. mag absolute reference)
+# 0.98 → ~2.5 s convergence time-constant at 20 Hz
+_COMPASS_ALPHA = 0.98
 
 # Ferrous object detection — ambient field baseline EMA
 _mag_baseline = None
@@ -150,6 +151,17 @@ def _apply_mag_cal(mx, my, mz):
     return cx, cy, cz
 
 
+def _apply_mag_remap(mx, my, mz):
+    """Permute and/or flip mag axes to align with the IMU body frame."""
+    with cal_lock:
+        idx  = calib.get('mag_axis_map',  [0, 1, 2])
+        sign = calib.get('mag_axis_sign', [1, 1, 1])
+    raw = (mx, my, mz)
+    return (raw[idx[0]] * sign[0],
+            raw[idx[1]] * sign[1],
+            raw[idx[2]] * sign[2])
+
+
 def _quat_to_euler(q):
     """Convert quaternion [w, x, y, z] to (roll, pitch, yaw) in degrees."""
     w, x, y, z = q
@@ -191,7 +203,7 @@ def _init_mag(i2c_bus):
 def sensor_loop():
     global roll_f, pitch_f, yaw_f, _q, last_time
     global accel_offsets, gyro_offsets, imu_offsets_enabled
-    global _last_leak_state, _consecutive_errors, _using_marg, _mag_baseline
+    global _last_leak_state, _consecutive_errors, _mag_baseline
 
     try:
         i2c = board.I2C()
@@ -285,31 +297,55 @@ def sensor_loop():
 
             if _madgwick is not None:
                 try:
-                    # Hysteresis: enter 9-DOF above 2 µT, drop to 6-DOF below 0.5 µT
-                    if mag_norm > 2.0:
-                        _using_marg = True
-                    elif mag_norm < 0.5:
-                        _using_marg = False
-                    if _using_marg and mag is not None:
-                        # 9-DOF update with magnetometer
-                        q_out = _madgwick.updateMARG(q_in, gyr=gyro_rad,
-                                                     acc=accel_g, mag=mag_cal)
-                    else:
-                        # 6-DOF fallback (no mag or mag reads zero)
-                        q_out = _madgwick.updateIMU(q_in, gyr=gyro_rad, acc=accel_g)
+                    # 6-DOF only — mag never enters Madgwick (separate breakout boards
+                    # have different axis orientations; MARG would corrupt pitch/roll)
+                    q_out = _madgwick.updateIMU(q_in, gyr=gyro_rad, acc=accel_g)
                     with _q_lock:
                         _q = q_out
-                    roll_f, pitch_f, yaw_f = _quat_to_euler(q_out)
+                    roll_f, pitch_f, _ = _quat_to_euler(q_out)
+
+                    # ── Tilt-compensated compass for yaw ─────────────────
+                    if mag is not None and mag_norm > 1.0:
+                        rmx, rmy, rmz = _apply_mag_remap(mx_cal, my_cal, mz_cal)
+                        roll_r  = math.radians(roll_f)
+                        pitch_r = math.radians(pitch_f)
+                        cr, sr  = math.cos(roll_r), math.sin(roll_r)
+                        cp, sp  = math.cos(pitch_r), math.sin(pitch_r)
+                        # Project onto horizontal plane (NED: x=fwd, y=right, z=down)
+                        Mx = rmx * cp + rmz * sp
+                        My = rmx * sr * sp + rmy * cr - rmz * sr * cp
+                        mag_yaw  = math.degrees(math.atan2(-My, Mx))
+                        # Complementary filter — wrap-safe blend of gyro+mag
+                        gyro_yaw = yaw_f + math.degrees(gyro_rad[2]) * dt
+                        diff = ((mag_yaw - gyro_yaw) + 180.0) % 360.0 - 180.0
+                        yaw_f = gyro_yaw + (1.0 - _COMPASS_ALPHA) * diff
+                    else:
+                        # No mag available — gyro integration only (slow drift)
+                        yaw_f += math.degrees(gyro_rad[2]) * dt
+
                 except Exception as e:
                     log(f"[SENSORS] Madgwick error: {e}")
-                    # Keep previous Euler values
+                    # Keep previous Euler values on error
             else:
-                # ── Complementary filter fallback ─────────────────────────
+                # ── Complementary filter fallback (no ahrs library) ───────
                 ar = math.degrees(math.atan2(ay, az))
                 ap = math.degrees(math.atan2(-ax, math.sqrt(ay**2 + az**2)))
                 roll_f  = _alpha_c * (roll_f  + gx * dt) + (1 - _alpha_c) * ar
                 pitch_f = _alpha_c * (pitch_f + gy * dt) + (1 - _alpha_c) * ap
-                yaw_f  += gz * dt
+                if mag is not None and mag_norm > 1.0:
+                    rmx, rmy, rmz = _apply_mag_remap(mx_cal, my_cal, mz_cal)
+                    roll_r  = math.radians(roll_f)
+                    pitch_r = math.radians(pitch_f)
+                    cr, sr  = math.cos(roll_r), math.sin(roll_r)
+                    cp, sp  = math.cos(pitch_r), math.sin(pitch_r)
+                    Mx = rmx * cp + rmz * sp
+                    My = rmx * sr * sp + rmy * cr - rmz * sr * cp
+                    mag_yaw  = math.degrees(math.atan2(-My, Mx))
+                    gyro_yaw = yaw_f + gz * dt
+                    diff = ((mag_yaw - gyro_yaw) + 180.0) % 360.0 - 180.0
+                    yaw_f = gyro_yaw + (1.0 - _alpha_c) * diff
+                else:
+                    yaw_f += gz * dt
 
             # ── Apply calibration offsets to Euler output ─────────────────
             with cal_lock:

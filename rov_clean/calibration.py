@@ -8,6 +8,8 @@ calib = {
     'roll_offset': 0, 'pitch_offset': 0, 'yaw_offset': 0, 'depth_zero_ft': 0,
     'mag_hard_iron': [0.0, 0.0, 0.0],
     'mag_soft_iron': [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+    'mag_axis_map':  [0, 1, 2],   # which raw mag channel → [x_out, y_out, z_out]
+    'mag_axis_sign': [1, 1, 1],   # sign multiplier per output axis (+1 or -1)
 }
 cal_lock = threading.Lock()
 
