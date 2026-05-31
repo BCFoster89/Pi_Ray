@@ -57,6 +57,9 @@ _mag_cal_lock = threading.Lock()
 _consecutive_errors = 0
 _MAX_CONSECUTIVE_ERRORS = 10
 
+# MARG/IMU mode hysteresis flag (enter MARG above 2 µT, drop below 0.5 µT)
+_using_marg = False
+
 # Complementary filter fallback (used only when ahrs not available)
 _alpha_c = 0.98
 last_time = time.time()
@@ -64,10 +67,12 @@ last_time = time.time()
 
 def reset_orientation():
     """Reset quaternion and Euler state to identity (called from routes.py on calibration)."""
-    global _q, roll_f, pitch_f, yaw_f
+    global _q, roll_f, pitch_f, yaw_f, _madgwick
     with _q_lock:
         _q = np.array([1.0, 0.0, 0.0, 0.0])
         roll_f = pitch_f = yaw_f = 0.0
+    if _AHRS_OK:
+        _madgwick = _MadgwickFilter(frequency=20.0, beta=_beta)
 
 
 def set_madgwick_beta(beta):
@@ -182,7 +187,7 @@ def _init_mag(i2c_bus):
 def sensor_loop():
     global roll_f, pitch_f, yaw_f, _q, last_time
     global accel_offsets, gyro_offsets, imu_offsets_enabled
-    global _last_leak_state, _consecutive_errors
+    global _last_leak_state, _consecutive_errors, _using_marg
 
     try:
         i2c = board.I2C()
@@ -266,7 +271,12 @@ def sensor_loop():
 
             if _madgwick is not None:
                 try:
-                    if mag is not None and mag_norm > 1.0:
+                    # Hysteresis: enter 9-DOF above 2 µT, drop to 6-DOF below 0.5 µT
+                    if mag_norm > 2.0:
+                        _using_marg = True
+                    elif mag_norm < 0.5:
+                        _using_marg = False
+                    if _using_marg and mag is not None:
                         # 9-DOF update with magnetometer
                         q_out = _madgwick.updateMARG(q_in, gyr=gyro_rad,
                                                      acc=accel_g, mag=mag_cal)
@@ -295,7 +305,7 @@ def sensor_loop():
             with _q_lock:
                 q_snap = _q.copy()
 
-            yaw_display = (yaw_f - yo + 180.0) % 360.0 - 180.0
+            yaw_display = (yaw_f - yo) % 360.0
 
             # ── Server-side dead reckoning ────────────────────────────────
             dr_estimator.update(q_snap, ax, ay, az, dt)

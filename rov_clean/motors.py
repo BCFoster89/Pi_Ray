@@ -208,7 +208,7 @@ class PWMMotorController:
         for pin, mix in DESCEND_MIX.items():
             duties[pin] = max(0.0, min(1.0, descend * mix))
 
-        # Ascend motors (right trigger) - pins 1, 2 (placeholders, not wired)
+        # Ascend motors (right trigger) - pins 15, 18
         for pin, mix in ASCEND_MIX.items():
             duties[pin] = max(0.0, min(1.0, ascend * mix))
 

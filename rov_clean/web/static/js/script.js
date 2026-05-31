@@ -753,8 +753,8 @@ function drawHUD(sensor){
 
   // === HEADING TAPE (top-center) ===
   let heading = sensor.yaw || 0;
-  // Normalize heading to 0-359 for display (integer, aviation convention)
-  let headingDisplay = Math.round(((heading % 360) + 360) % 360);
+  // Server already sends [0, 360) — just round to integer
+  let headingDisplay = Math.round(heading % 360);
 
   ctx.fillStyle = "#ff0";
   ctx.font = "bold 16px Arial";
