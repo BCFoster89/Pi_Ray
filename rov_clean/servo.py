@@ -19,23 +19,46 @@ _rate_ts = 0.0                 # timestamp of last rate command
 
 
 def _tilt_loop():
-    """Background thread: accumulates position from rate at 50 Hz."""
-    global _pos_us
-    last = time.time()
+    """Background thread: accumulates position from rate at 50 Hz, auto-reconnects."""
+    global _pos_us, _pi
+    last          = time.time()
+    _reconnect_ts = 0.0
+
     while True:
         time.sleep(0.02)
-        if _pi is None:
+        try:
+            # ── Reconnect if pigpiod died or never started ────────────
+            if _pi is None or not _pi.connected:
+                now = time.time()
+                if now - _reconnect_ts > 5.0:
+                    _reconnect_ts = now
+                    try:
+                        import pigpio
+                        candidate = pigpio.pi()
+                        if candidate.connected:
+                            _pi = candidate
+                            _pi.set_servo_pulsewidth(SERVO_PIN, int(_pos_us))
+                            log("[SERVO] pigpio reconnected")
+                        else:
+                            subprocess.run(['sudo', 'pigpiod'], capture_output=True)
+                    except Exception:
+                        pass
+                last = time.time()
+                continue
+
+            # ── Normal rate-accumulation step ─────────────────────────
+            now = time.time()
+            dt  = now - last
+            last = now
+            rate = _rate if (now - _rate_ts) < RATE_TIMEOUT_S else 0.0
+            if rate != 0.0:
+                _pos_us += rate * RATE_US_PER_SEC * dt
+                _pos_us  = max(float(MIN_US), min(float(MAX_US), _pos_us))
+                _pi.set_servo_pulsewidth(SERVO_PIN, int(_pos_us))
+
+        except Exception as e:
+            log(f"[SERVO] Loop error: {e}")
             last = time.time()
-            continue
-        now = time.time()
-        dt  = now - last
-        last = now
-        # Safety timeout — stop if controller went silent
-        rate = _rate if (now - _rate_ts) < RATE_TIMEOUT_S else 0.0
-        if rate != 0.0:
-            _pos_us += rate * RATE_US_PER_SEC * dt
-            _pos_us  = max(float(MIN_US), min(float(MAX_US), _pos_us))
-            _pi.set_servo_pulsewidth(SERVO_PIN, int(_pos_us))
 
 
 def init():
@@ -47,7 +70,8 @@ def init():
         if not _pi.connected:
             log("[SERVO] pigpiod not running — attempting auto-start")
             subprocess.run(['sudo', 'pigpiod'], capture_output=True)
-            time.sleep(0.6)
+            subprocess.run(['sudo', 'systemctl', 'start', 'pigpiod'], capture_output=True)
+            time.sleep(0.8)
             _pi = pigpio.pi()
         if _pi.connected:
             _pos_us = float(CENTER_US)
@@ -56,11 +80,13 @@ def init():
             threading.Thread(target=_tilt_loop, daemon=True).start()
             log(f"[SERVO] Camera tilt on GPIO {SERVO_PIN} via pigpio DMA (rate control)")
         else:
-            log("[SERVO] pigpio daemon unavailable — servo disabled")
+            log("[SERVO] pigpio daemon unavailable — servo disabled (will retry)")
             _pi = None
+            threading.Thread(target=_tilt_loop, daemon=True).start()
     except Exception as e:
         log(f"[SERVO] Init failed: {e}")
         _pi = None
+        threading.Thread(target=_tilt_loop, daemon=True).start()
 
 
 def set_tilt(value: float):
