@@ -74,6 +74,7 @@ previous_buttons = [0] * controller.get_numbuttons()
 estop_active = False       # Local tracking of E-stop state
 last_heartbeat_time = 0.0  # Last time a heartbeat was sent
 last_tilt_sent = 0.0       # Last tilt value sent to ROV
+last_tilt_time = 0.0       # Last time a tilt command was sent (for keepalive)
 
 
 def apply_deadband(value, deadband=DEADBAND):
@@ -279,11 +280,16 @@ try:
                 smoothed[key] = 0.0
 
         # Camera tilt — independent of E-stop (tilt is always active)
+        # Rate control: send on change OR keepalive every 0.25 s while stick is held
         tilt = values['tilt']
-        if abs(tilt - last_tilt_sent) > CHANGE_THRESHOLD:
+        now_t = time.time()
+        tilt_changed   = abs(tilt - last_tilt_sent) > CHANGE_THRESHOLD
+        tilt_keepalive = abs(tilt) > 0.05 and (now_t - last_tilt_time) > 0.25
+        if tilt_changed or tilt_keepalive:
             try:
                 requests.post(f"{BASE_URL}/camera/tilt", json={'value': tilt}, timeout=0.2)
                 last_tilt_sent = tilt
+                last_tilt_time = now_t
             except Exception as e:
                 print(f"Tilt error: {e}")
 

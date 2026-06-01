@@ -1,22 +1,46 @@
 # servo.py
-"""Camera tilt servo controller — GPIO 14, pigpio DMA PWM, 50 Hz."""
+"""Camera tilt servo controller — GPIO 14, pigpio DMA PWM, rate control."""
 
-import time, subprocess
+import time, threading, subprocess
 from logger import log
 
-SERVO_PIN = 14
-CENTER_US = 1500   # µs — neutral/center tilt (1.5 ms pulse)
-RANGE_US  = 300    # µs — ±300 µs from center ≈ ±27° (matches previous range)
-MIN_US    = 800    # hard safety floor
-MAX_US    = 2200   # hard safety ceiling
+SERVO_PIN       = 14
+CENTER_US       = 1500    # µs — neutral/center tilt (1.5 ms pulse)
+RANGE_US        = 300     # µs — ±300 µs from center ≈ ±27°
+MIN_US          = 800     # hard safety floor
+MAX_US          = 2200    # hard safety ceiling
+RATE_US_PER_SEC = 300.0   # max speed: full travel (~600 µs) in ~2 s at full stick
+RATE_TIMEOUT_S  = 1.0     # stop moving if no command received within this time
 
-_pi   = None   # pigpio.pi() instance
-_tilt = 0.0    # last commanded value (-1.0 to +1.0)
+_pi      = None
+_pos_us  = float(CENTER_US)   # current position (µs, float for precision)
+_rate    = 0.0                 # joystick rate command (-1.0 to +1.0)
+_rate_ts = 0.0                 # timestamp of last rate command
+
+
+def _tilt_loop():
+    """Background thread: accumulates position from rate at 50 Hz."""
+    global _pos_us
+    last = time.time()
+    while True:
+        time.sleep(0.02)
+        if _pi is None:
+            last = time.time()
+            continue
+        now = time.time()
+        dt  = now - last
+        last = now
+        # Safety timeout — stop if controller went silent
+        rate = _rate if (now - _rate_ts) < RATE_TIMEOUT_S else 0.0
+        if rate != 0.0:
+            _pos_us += rate * RATE_US_PER_SEC * dt
+            _pos_us  = max(float(MIN_US), min(float(MAX_US), _pos_us))
+            _pi.set_servo_pulsewidth(SERVO_PIN, int(_pos_us))
 
 
 def init():
     """Initialize servo via pigpio DMA PWM. Called once at server startup."""
-    global _pi, _tilt
+    global _pi, _pos_us, _rate, _rate_ts
     try:
         import pigpio
         _pi = pigpio.pi()
@@ -26,9 +50,11 @@ def init():
             time.sleep(0.6)
             _pi = pigpio.pi()
         if _pi.connected:
+            _pos_us = float(CENTER_US)
+            _rate   = 0.0
             _pi.set_servo_pulsewidth(SERVO_PIN, CENTER_US)
-            _tilt = 0.0
-            log(f"[SERVO] Camera tilt on GPIO {SERVO_PIN} via pigpio DMA")
+            threading.Thread(target=_tilt_loop, daemon=True).start()
+            log(f"[SERVO] Camera tilt on GPIO {SERVO_PIN} via pigpio DMA (rate control)")
         else:
             log("[SERVO] pigpio daemon unavailable — servo disabled")
             _pi = None
@@ -39,29 +65,27 @@ def init():
 
 def set_tilt(value: float):
     """
-    Set camera tilt position.
-    value: -1.0 = full up, 0.0 = center, +1.0 = full down
+    Set camera tilt rate.
+    value: -1.0 = tilt up at max speed, 0.0 = hold position, +1.0 = tilt down at max speed
     """
-    global _tilt
-    if _pi is None:
-        return
-    _tilt = max(-1.0, min(1.0, float(value)))
-    width = int(CENTER_US + _tilt * RANGE_US)
-    width = max(MIN_US, min(MAX_US, width))
-    _pi.set_servo_pulsewidth(SERVO_PIN, width)
+    global _rate, _rate_ts
+    _rate    = max(-1.0, min(1.0, float(value)))
+    _rate_ts = time.time()
 
 
 def center():
-    """Return servo to neutral/center position."""
-    global _tilt
-    _tilt = 0.0
+    """Snap servo to center immediately (called by E-stop)."""
+    global _rate, _rate_ts, _pos_us
+    _rate    = 0.0
+    _rate_ts = time.time()
+    _pos_us  = float(CENTER_US)
     if _pi is not None:
         _pi.set_servo_pulsewidth(SERVO_PIN, CENTER_US)
 
 
 def get_tilt() -> float:
-    """Return last commanded tilt value."""
-    return _tilt
+    """Return current tilt position as -1.0 to +1.0."""
+    return max(-1.0, min(1.0, (_pos_us - CENTER_US) / RANGE_US))
 
 
 def cleanup():
