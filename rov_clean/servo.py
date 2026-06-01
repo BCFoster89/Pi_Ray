@@ -6,10 +6,10 @@ from logger import log
 
 SERVO_PIN       = 14
 CENTER_US       = 1500    # µs — neutral/center tilt (1.5 ms pulse)
-RANGE_US        = 300     # µs — ±300 µs from center ≈ ±27°
+RANGE_US        = 167     # µs — ±167 µs from center ≈ ±15° (30° total travel)
 MIN_US          = 800     # hard safety floor
 MAX_US          = 2200    # hard safety ceiling
-RATE_US_PER_SEC = 300.0   # max speed: full travel (~600 µs) in ~2 s at full stick
+RATE_US_PER_SEC = 150.0   # max speed: full 30° travel in ~2 s at full stick
 RATE_TIMEOUT_S  = 1.0     # stop moving if no command received within this time
 
 _pi      = None
