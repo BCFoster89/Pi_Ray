@@ -253,7 +253,7 @@ class PWMMotorController:
             target = target_duties.get(pin, 0.0)
             smoothed_duties[pin] = self.smooth_duty(pin, target)
 
-        # Apply to hardware INSIDE the lock — no sleeps
+        # Update state and identify changed pins INSIDE the lock (no sleeps)
         with self.lock:
             # Re-check E-stop in case it was engaged between the two lock acquisitions
             if self.estop_locked:
@@ -265,19 +265,29 @@ class PWMMotorController:
             self.descend_value = descend
             self.ascend_value = ascend
 
-            # Apply smoothed duties to hardware (no stagger delay under lock)
+            pins_to_update = {}
             for pin in self.REAL_PINS:
                 new_duty = smoothed_duties[pin]
                 if abs(new_duty - self.current_duties[pin]) > 0.01:
                     self.current_duties[pin] = new_duty
-                    if pin in self.pwm_devices:
-                        self.pwm_devices[pin].value = new_duty
+                    pins_to_update[pin] = new_duty
 
-            # Update shared state (include all pins for UI display)
+            # Update shared state
             pwm_state['duties'] = self.current_duties.copy()
             pwm_state['active'] = any(d > 0 for d in self.current_duties.values())
             pwm_state['last_update'] = self.last_command_time
             pwm_state['control_mode'] = 'pwm'
+
+        # Apply hardware writes OUTSIDE the lock with stagger delay between pins.
+        # Stagger spreads inrush current across time so paired motor boards
+        # don't spike simultaneously. Check estop_locked each iteration so an
+        # emergency stop issued during the stagger window is not overwritten.
+        for pin, duty in pins_to_update.items():
+            if self.estop_locked:
+                break
+            if pin in self.pwm_devices:
+                self.pwm_devices[pin].value = duty
+            time.sleep(self.stagger_delay)
 
         return self.current_duties.copy()
 
