@@ -43,7 +43,7 @@ MIN_ACTIVATE_INTERVAL_S = 0.5
 PWM_CONFIG = {
     'frequency': 200,       # PWM frequency in Hz
     'deadband': 0.05,       # Ignore inputs below 5%
-    'ramp_rate': 0.15,      # Max duty cycle change per update (prevents voltage spikes)
+    'ramp_rate': 0.05,      # Max duty cycle change per update (prevents voltage spikes / brownouts)
     'stagger_delay': 0.05,  # Delay between motor updates to prevent inrush current
     'watchdog_timeout': 0.5,# Stop motors if no command received in 500ms
     'heartbeat_timeout': 2.0# Stop motors if no heartbeat received in 2s

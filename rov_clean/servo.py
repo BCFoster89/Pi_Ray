@@ -37,7 +37,6 @@ def _tilt_loop():
                         candidate = pigpio.pi()
                         if candidate.connected:
                             _pi = candidate
-                            _pi.set_servo_pulsewidth(SERVO_PIN, int(_pos_us))
                             log("[SERVO] pigpio reconnected")
                         else:
                             subprocess.run(['sudo', 'pigpiod'], capture_output=True)
@@ -76,7 +75,6 @@ def init():
         if _pi.connected:
             _pos_us = float(CENTER_US)
             _rate   = 0.0
-            _pi.set_servo_pulsewidth(SERVO_PIN, CENTER_US)
             threading.Thread(target=_tilt_loop, daemon=True).start()
             log(f"[SERVO] Camera tilt on GPIO {SERVO_PIN} via pigpio DMA (rate control)")
         else:

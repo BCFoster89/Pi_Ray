@@ -1,0 +1,90 @@
+Pi_Ray ROV — Component Specifications
+======================================
+Last updated: 2026-06-06
+
+────────────────────────────────────────
+COMPUTE
+────────────────────────────────────────
+Board         : Raspberry Pi (exact model TBD — verify with `cat /proc/cpuinfo`)
+OS            : Raspberry Pi OS (Bookworm or Bullseye)
+PWM daemon    : pigpiod (DMA PWM for servo; gpiozero software PWM for motors)
+
+────────────────────────────────────────
+IMU / AHRS
+────────────────────────────────────────
+Sensor        : (confirm model — likely ICM-42688-P or similar on WT901 or Waveshare)
+Library       : ahrs (Madgwick filter, beta = 1.0, 20 Hz)
+Interface     : I2C
+Calibration   : Accelerometer + gyro + magnetometer offsets stored in calib.json
+
+────────────────────────────────────────
+CAMERA TILT SERVO
+────────────────────────────────────────
+Kit           : Adafruit Mini Pan-Tilt Kit — Assembled with Micro Servos
+Adafruit ID   : 1967
+Servo type    : Micro servo (SG90 or equivalent)
+Control GPIO  : GPIO 14 (physical pin 8)
+PWM method    : pigpio DMA (cycle-accurate, no OS jitter)
+Pulse range   : 800–2200 µs (hard limits); 1333–1667 µs working range (±167 µs from center)
+Center pulse  : 1500 µs (neutral tilt)
+Travel        : ~30° total (±15° from center)
+Rate          : 150 µs/s max speed (full travel in ~2 s at full stick)
+Control mode  : Rate control — joystick = speed, not position; holds on release
+Servo voltage : 5 V (from Pi 5 V rail or separate BEC)
+
+────────────────────────────────────────
+THRUSTER MOTOR DRIVERS
+────────────────────────────────────────
+Board         : ANMBEST Dual High-Power MOSFET Trigger Switch Drive Module
+Part #        : (ASIN B07NWD8W26 or similar — confirm on package)
+Input voltage : DC 5 V–36 V
+Cont. current : 15 A per channel
+Peak current  : 30 A per channel
+Power rating  : 400 W
+PWM input     : 0–20 kHz signal (Pi GPIO 3.3 V logic compatible)
+Type          : Single-direction MOSFET switch (NOT an H-bridge — each board drives one direction only)
+Channels      : Dual (two independent MOSFET switches per board)
+
+GPIO assignments (BCM numbering):
+  Surge fwd   : GPIO  (confirm in config.py)
+  Surge rev   : GPIO  (confirm in config.py)
+  Sway fwd    : GPIO  (confirm in config.py)
+  Sway rev    : GPIO  (confirm in config.py)
+  Ascend      : GPIO 15, 18
+  Descend     : GPIO 6, 20
+  Yaw         : GPIO  (confirm in config.py)
+
+Software PWM  : gpiozero PWMOutputDevice, 200 Hz
+Ramp rate     : 0.05 duty/update (0→100% in ~1 s at 20 Hz command rate)
+
+KNOWN ISSUE — Vertical thruster (ascend/descend):
+  One motor is driven by two single-direction boards (one wired reversed).
+  The inactive board's protection diodes block the reverse current path.
+  Hardware fix needed: replace with proper H-bridge (L298N, DRV8833, TB6612)
+  or add 1N4001 isolation diodes in series with each board's motor output.
+
+BROWNOUT RISK:
+  Motor inrush current (locked-rotor) can sag battery voltage below Pi minimum (4.75 V).
+  Mitigations (in order of importance):
+    1. [HARDWARE] Power Pi from separate 5 V supply (BEC or power bank) — isolate from motor battery
+    2. [HARDWARE] Add 1000 µF / 35 V+ electrolytic cap across each board's V+ and GND
+    3. [HARDWARE] Add 0.1 µF ceramic cap in parallel with electrolytic (high-freq suppression)
+    4. [HARDWARE] Use ≥16 AWG (14 AWG preferred) wire for motor supply runs
+    5. [HARDWARE] Add 1N5819 Schottky flyback diode across each motor terminal if not built in
+    6. [SOFTWARE]  ramp_rate = 0.05 slows motor startup to ~1 s (already applied)
+
+────────────────────────────────────────
+POWER
+────────────────────────────────────────
+Battery       : (TBD — document voltage, capacity, chemistry, connector type)
+Motor supply  : Battery direct to MOSFET boards (verify voltage matches motor rating)
+Pi supply     : (TBD — currently shared with motors? Should be separate BEC)
+Recommended   : Separate 5 V / 3 A regulated BEC for Pi (e.g., Pololu D24V22F5)
+
+────────────────────────────────────────
+NETWORKING
+────────────────────────────────────────
+Pi IP         : 192.168.4.31 (static, access point or router assignment)
+Server port   : 5000 (Flask)
+Controller    : Windows PC running winconpi5.py (pygame + requests)
+Protocol      : HTTP REST, 20 Hz motor commands, 0.25 s heartbeat keepalive
