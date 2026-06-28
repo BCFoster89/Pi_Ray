@@ -4,14 +4,13 @@ from logger import log
 
 # Hardware config
 # Horizontal thrusters: 8, 12, 13, 16
-# Vertical thrusters: descend 6, 20 — ascend 15, 18 (same motors, polarity reversed)
+# Vertical thrusters: MDD10A dual-channel — PWM pins 17, 22 / DIR pins 27, 23
 horizontal_pins = [8, 12, 13, 16]
-descend_pins = [6, 20]
-ascend_pins = [15, 18]
-ASCEND_INSTALLED = True
+vertical_pwm_pins = [17, 22]   # MDD10A PWM inputs (speed magnitude)
+vertical_dir_pins  = [27, 23]  # MDD10A DIR inputs (HIGH=descend, LOW=ascend; index-matched)
 
-# motor_pins only includes pins that physically exist on the board
-motor_pins = horizontal_pins + descend_pins + ascend_pins
+# motor_pins tracks pins with PWM duty cycles (DIR pins are digital-only)
+motor_pins = horizontal_pins + vertical_pwm_pins
 
 led_pin = 24
 led_state = False
@@ -27,7 +26,6 @@ MOTOR_GROUPS = {
     'a': [13, 16],
     'left_trigger': [12, 16],
     'right_trigger': [8, 13],
-    'descend': [6, 20],
 }
 motor_states = {name: "off" for name in MOTOR_GROUPS}
 
@@ -43,8 +41,8 @@ MIN_ACTIVATE_INTERVAL_S = 0.5
 PWM_CONFIG = {
     'frequency': 200,       # PWM frequency in Hz
     'deadband': 0.05,       # Ignore inputs below 5%
-    'ramp_rate': 0.05,      # Max duty cycle change per update (prevents voltage spikes / brownouts)
-    'stagger_delay': 0.05,  # Delay between motor updates to prevent inrush current
+    'ramp_rate': 0.35,      # Max duty cycle change per update (~0.14 s ramp; MDD10A handles inrush)
+    'stagger_delay': 0.02,  # Delay between motor updates
     'watchdog_timeout': 0.5,# Stop motors if no command received in 500ms
     'heartbeat_timeout': 2.0# Stop motors if no heartbeat received in 2s
 }
@@ -58,9 +56,9 @@ PWM_CONFIG = {
 #    [16]-------[13]
 #         REAR
 #
-# Vertical thrusters:
-#   Descend: pins 6, 20
-#   Ascend:  pins 15, 18 (same motors as descend, polarity reversed)
+# Vertical thrusters (MDD10A dual-channel):
+#   PWM:  pins 17 (motor 1), 22 (motor 2)   — speed magnitude
+#   DIR:  pins 27 (motor 1), 23 (motor 2)   — HIGH=descend, LOW=ascend
 
 # Thrust mixing matrix for horizontal thrusters
 # Each motor's contribution to surge (forward/back), sway (strafe), yaw (rotation)
@@ -78,18 +76,6 @@ THRUST_MIX = {
     13: [-1.0, +1.0, +1.0],  # Rear-Right: backward, strafe-right, turn-right
 }
 
-# Vertical thrust mixing - descend only (ascend not installed)
-# Descend motors (left trigger) - pins 6, 20
-DESCEND_MIX = {
-    6:  1.0,   # Descend motor 1
-    20: 1.0,   # Descend motor 2
-}
-
-# Ascend motors (right trigger) - pins 15, 18
-ASCEND_MIX = {
-    15: 1.0,  # Ascend motor 1
-    18: 1.0,  # Ascend motor 2
-}
 
 # Current PWM state (duty cycles for each motor, 0.0-1.0)
 pwm_state = {
@@ -122,7 +108,7 @@ GPIO.setup(led_pin, GPIO.OUT)
 GPIO.output(led_pin, GPIO.LOW)
 # Leak sensor - input with pull-up (active LOW when wet)
 GPIO.setup(leak_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-# Setup only real motor pins
-for p in horizontal_pins + descend_pins + ascend_pins:
+# Setup motor PWM pins and MDD10A DIR pins
+for p in horizontal_pins + vertical_pwm_pins + vertical_dir_pins:
     GPIO.setup(p, GPIO.OUT)
     GPIO.output(p, GPIO.LOW)

@@ -58,12 +58,12 @@ _consecutive_errors = 0
 _MAX_CONSECUTIVE_ERRORS = 10
 
 # Complementary heading filter gain (gyro weight vs. mag absolute reference)
-# 0.90 → ~0.5 s convergence time-constant at 20 Hz
-_COMPASS_ALPHA = 0.90
+# 0.95 → less raw mag noise couples into fused yaw each step at 20 Hz
+_COMPASS_ALPHA = 0.95
 
 # Display-layer EMA smoothing (separate from filter state, so feedback is unaffected)
-# 0.30 at 20 Hz ≈ 250 ms lag — good for slow ROV where stability > refresh rate
-_DISP_ALPHA = 0.30
+# 0.08 at 20 Hz ≈ heavily smoothed display heading; does not affect control loop
+_DISP_ALPHA = 0.08
 _disp_roll  = 0.0
 _disp_pitch = 0.0
 _disp_yaw   = 0.0

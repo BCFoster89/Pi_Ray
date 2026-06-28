@@ -4,17 +4,17 @@ import threading
 import RPi.GPIO as GPIO
 from gpiozero import PWMOutputDevice
 from logger import log
-from config import (motor_pins, horizontal_pins, descend_pins, ascend_pins,
+from config import (motor_pins, horizontal_pins, vertical_pwm_pins, vertical_dir_pins,
                     MOTOR_GROUPS, MAX_ACTIVE_GROUPS, GROUP_STAGGER_S,
-                    MIN_ACTIVATE_INTERVAL_S, THRUST_MIX, DESCEND_MIX, ASCEND_MIX,
+                    MIN_ACTIVATE_INTERVAL_S, THRUST_MIX,
                     PWM_CONFIG, pwm_state)
 
 
 class MotorController:
     """Legacy on/off motor controller for manual button control."""
 
-    # Pins that actually exist on the Pi (exclude placeholders)
-    REAL_PINS = horizontal_pins + descend_pins
+    # Pins that actually exist on the Pi (horizontal only — vertical needs DIR+PWM)
+    REAL_PINS = horizontal_pins
 
     def __init__(self):
         self.status = {p: 0 for p in motor_pins}
@@ -58,8 +58,8 @@ class MotorController:
 class PWMMotorController:
     """PWM-based motor controller for proportional vectored thrust control."""
 
-    # Pins that actually exist on the Pi (exclude placeholders like 1, 2)
-    REAL_PINS = horizontal_pins + descend_pins + ascend_pins
+    # PWM pins only — DIR pins are driven by GPIO.output, not PWMOutputDevice
+    REAL_PINS = horizontal_pins + vertical_pwm_pins
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -164,6 +164,8 @@ class PWMMotorController:
             self.target_duties[pin] = 0.0
             if pin in self.pwm_devices:
                 self.pwm_devices[pin].value = 0.0
+        for dir_pin in vertical_dir_pins:
+            GPIO.output(dir_pin, GPIO.LOW)
         self.descend_value = 0.0
         self.ascend_value = 0.0
         pwm_state['duties'] = {p: 0.0 for p in motor_pins}
@@ -204,13 +206,10 @@ class PWMMotorController:
             raw = surge * s_mix + sway * w_mix + yaw * y_mix
             duties[pin] = max(0.0, min(1.0, raw))
 
-        # Descend motors (left trigger) - pins 6, 20
-        for pin, mix in DESCEND_MIX.items():
-            duties[pin] = max(0.0, min(1.0, descend * mix))
-
-        # Ascend motors (right trigger) - pins 15, 18
-        for pin, mix in ASCEND_MIX.items():
-            duties[pin] = max(0.0, min(1.0, ascend * mix))
+        # Vertical thrusters (MDD10A): magnitude only — direction set via DIR pins
+        vertical = descend - ascend   # +1.0 = full descend, -1.0 = full ascend
+        for pin in vertical_pwm_pins:
+            duties[pin] = min(1.0, abs(vertical))
 
         return duties
 
@@ -278,10 +277,16 @@ class PWMMotorController:
             pwm_state['last_update'] = self.last_command_time
             pwm_state['control_mode'] = 'pwm'
 
+        # Set MDD10A direction pins based on net vertical command.
+        # DIR must be stable before PWM is applied.
+        vertical_net = descend - ascend
+        direction = GPIO.HIGH if vertical_net >= 0 else GPIO.LOW
+        for dir_pin in vertical_dir_pins:
+            GPIO.output(dir_pin, direction)
+
         # Apply hardware writes OUTSIDE the lock with stagger delay between pins.
-        # Stagger spreads inrush current across time so paired motor boards
-        # don't spike simultaneously. Check estop_locked each iteration so an
-        # emergency stop issued during the stagger window is not overwritten.
+        # Stagger spreads inrush current across time. Check estop_locked each
+        # iteration so an emergency stop during the stagger window is not overwritten.
         for pin, duty in pins_to_update.items():
             if self.estop_locked:
                 break
