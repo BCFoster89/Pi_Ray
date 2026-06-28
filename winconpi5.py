@@ -69,7 +69,7 @@ HEARTBEAT_INTERVAL = 0.5  # Send heartbeat every 500ms
 # STATE TRACKING
 # =============================================================================
 last_sent = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
-smoothed = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0, 'tilt': 0.0}
+smoothed = {'surge': 0.0, 'sway': 0.0, 'yaw': 0.0, 'descend': 0.0, 'ascend': 0.0}
 previous_buttons = [0] * controller.get_numbuttons()
 estop_active = False       # Local tracking of E-stop state
 last_heartbeat_time = 0.0  # Last time a heartbeat was sent
@@ -108,7 +108,6 @@ def read_axes():
 
     # Read raw axis values for sticks
     left_x  = controller.get_axis(AXIS_MAP['left_x'])
-    left_y  = controller.get_axis(AXIS_MAP['left_y'])
     right_x = controller.get_axis(AXIS_MAP['right_x'])
     right_y = controller.get_axis(AXIS_MAP['right_y'])
 
@@ -132,17 +131,20 @@ def read_axes():
     ascend_raw  = ascend_raw  if ascend_raw  > DEADBAND else 0.0
     descend_raw = descend_raw if descend_raw > DEADBAND else 0.0
 
-    # Camera tilt: left stick Y — push up = tilt up (negative Y → negative tilt)
-    tilt_raw = apply_deadband(-left_y)
+    # Camera tilt: D-pad up/down — digital +1/0/-1, no smoothing needed
+    try:
+        hat_y = controller.get_hat(0)[1]  # +1=up, -1=down, 0=neutral
+        tilt_raw = float(hat_y)
+    except (pygame.error, IndexError):
+        tilt_raw = 0.0
 
-    # Apply smoothing
     return {
         'surge':   smooth_value('surge',   surge_raw),
         'sway':    smooth_value('sway',    sway_raw),
         'yaw':     smooth_value('yaw',     yaw_raw),
         'descend': smooth_value('descend', descend_raw),
         'ascend':  smooth_value('ascend',  ascend_raw),
-        'tilt':    smooth_value('tilt',    tilt_raw),
+        'tilt':    tilt_raw,
     }
 
 
@@ -248,7 +250,7 @@ print("Controls:")
 print("  Right stick Y : Forward / Backward (surge)")
 print("  Right stick X : Strafe Left / Right (sway)")
 print("  Left stick X  : Rotate Left / Right (yaw)")
-print("  Left stick Y  : Camera Tilt (up/down)")
+print("  D-pad Up/Down : Camera Tilt (up/down)")
 print("  Left trigger  : Ascend (0-100%)")
 print("  Right trigger : Descend (0-100%)")
 print("  B button      : EMERGENCY STOP (latching)")

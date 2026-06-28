@@ -53,7 +53,8 @@ def _tilt_loop():
             if rate != 0.0:
                 _pos_us += rate * RATE_US_PER_SEC * dt
                 _pos_us  = max(float(MIN_US), min(float(MAX_US), _pos_us))
-                _pi.set_servo_pulsewidth(SERVO_PIN, int(_pos_us))
+            # Always send pulse to actively hold position — prevents jump on first command
+            _pi.set_servo_pulsewidth(SERVO_PIN, int(_pos_us))
 
         except Exception as e:
             log(f"[SERVO] Loop error: {e}")
@@ -75,6 +76,8 @@ def init():
         if _pi.connected:
             _pos_us = float(CENTER_US)
             _rate   = 0.0
+            # Establish center as known physical position before any user command
+            _pi.set_servo_pulsewidth(SERVO_PIN, CENTER_US)
             threading.Thread(target=_tilt_loop, daemon=True).start()
             log(f"[SERVO] Camera tilt on GPIO {SERVO_PIN} via pigpio DMA (rate control)")
         else:
