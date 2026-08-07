@@ -6,16 +6,24 @@ from logger import log
 
 SERVO_PIN       = 14
 CENTER_US       = 1500    # µs — neutral/center tilt (1.5 ms pulse)
-RANGE_US        = 167     # µs — ±167 µs from center ≈ ±15° (30° total travel)
-MIN_US          = 800     # hard safety floor
-MAX_US          = 2200    # hard safety ceiling
-RATE_US_PER_SEC = 150.0   # max speed: full 30° travel in ~2 s at full stick
+RANGE_US        = 167     # µs — used only to scale get_tilt() status readout
+MIN_US          = 500     # SG90 full-swing floor — wrap window, not a hard stop (hard stops removed)
+MAX_US          = 2500    # SG90 full-swing ceiling — wrap window, not a hard stop
+RATE_US_PER_SEC = 150.0   # max speed: full travel in ~2 s at full stick
 RATE_TIMEOUT_S  = 1.0     # stop moving if no command received within this time
 
 _pi      = None
 _pos_us  = float(CENTER_US)   # current position (µs, float for precision)
 _rate    = 0.0                 # joystick rate command (-1.0 to +1.0)
 _rate_ts = 0.0                 # timestamp of last rate command
+_active  = False                # becomes True on first real set_tilt() command — no pulse before that
+
+
+def _wrap_pos(pos_us: float) -> float:
+    """Wrap position within the pulse window instead of hard-stopping — servo has no
+    mechanical end-stop anymore, so continued input should keep rotating, not jam."""
+    span = MAX_US - MIN_US
+    return MIN_US + (pos_us - MIN_US) % span
 
 
 def _tilt_loop():
@@ -52,9 +60,11 @@ def _tilt_loop():
             rate = _rate if (now - _rate_ts) < RATE_TIMEOUT_S else 0.0
             if rate != 0.0:
                 _pos_us += rate * RATE_US_PER_SEC * dt
-                _pos_us  = max(float(MIN_US), min(float(MAX_US), _pos_us))
-            # Always send pulse to actively hold position — prevents jump on first command
-            _pi.set_servo_pulsewidth(SERVO_PIN, int(_pos_us))
+                _pos_us  = _wrap_pos(_pos_us)
+            # Only drive the pin once a real command has been received — stay
+            # detached/silent on boot so the servo doesn't jump to center on its own
+            if _active:
+                _pi.set_servo_pulsewidth(SERVO_PIN, int(_pos_us))
 
         except Exception as e:
             log(f"[SERVO] Loop error: {e}")
@@ -76,10 +86,10 @@ def init():
         if _pi.connected:
             _pos_us = float(CENTER_US)
             _rate   = 0.0
-            # Establish center as known physical position before any user command
-            _pi.set_servo_pulsewidth(SERVO_PIN, CENTER_US)
+            # No pulse written here — stay detached until the first real command
+            # arrives, so the servo never jumps/jerks on its own at boot
             threading.Thread(target=_tilt_loop, daemon=True).start()
-            log(f"[SERVO] Camera tilt on GPIO {SERVO_PIN} via pigpio DMA (rate control)")
+            log(f"[SERVO] Camera tilt on GPIO {SERVO_PIN} via pigpio DMA (idle until first command)")
         else:
             log("[SERVO] pigpio daemon unavailable — servo disabled (will retry)")
             _pi = None
@@ -95,18 +105,21 @@ def set_tilt(value: float):
     Set camera tilt rate.
     value: -1.0 = tilt up at max speed, 0.0 = hold position, +1.0 = tilt down at max speed
     """
-    global _rate, _rate_ts
+    global _rate, _rate_ts, _active, _pos_us
+    if not _active:
+        _pos_us = float(CENTER_US)   # first command — start from a known reference
+        _active = True
     _rate    = max(-1.0, min(1.0, float(value)))
     _rate_ts = time.time()
 
 
 def center():
-    """Snap servo to center immediately (called by E-stop)."""
+    """Snap servo to center immediately (called by E-stop). No-op if never activated."""
     global _rate, _rate_ts, _pos_us
     _rate    = 0.0
     _rate_ts = time.time()
     _pos_us  = float(CENTER_US)
-    if _pi is not None:
+    if _active and _pi is not None:
         _pi.set_servo_pulsewidth(SERVO_PIN, CENTER_US)
 
 

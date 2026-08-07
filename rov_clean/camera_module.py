@@ -152,13 +152,14 @@ def add_telemetry_overlay(filepath):
         pitch = sensor_data.get('pitch', 0.0)
         roll = sensor_data.get('roll', 0.0)
         heading = sensor_data.get('yaw', 0.0)
-        water_temp = sensor_data.get('temperature_f', 0.0)
+        water_temp = sensor_data.get('temperature_f', "ERR")
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Format telemetry string
+        water_temp_str = f"{water_temp:.1f}\u00B0F" if isinstance(water_temp, (int, float)) else f"{water_temp}"
         telemetry_text = (
             f"Depth: {depth:.1f} ft  |  Pitch: {pitch:.1f}\u00B0  |  Roll: {roll:.1f}\u00B0  |  "
-            f"Heading: {heading:.0f}\u00B0  |  Water: {water_temp:.1f}\u00B0F  |  {timestamp}"
+            f"Heading: {heading:.0f}\u00B0  |  Water: {water_temp_str}  |  {timestamp}"
         )
 
         # Try to use a monospace font, fall back to default

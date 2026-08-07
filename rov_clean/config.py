@@ -87,10 +87,10 @@ pwm_state = {
 
 # Shared sensor data
 sensor_data = {
-    'pressure_inhg': 0.0, 'temperature_f': 0.0, 'depth_ft': 0.0,
+    'pressure_inhg': 0.0, 'temperature_f': "ERR", 'depth_ft': 0.0,
     'accel_x': 0.0, 'accel_y': 0.0, 'accel_z': 0.0,
     'gyro_x': 0.0, 'gyro_y': 0.0, 'gyro_z': 0.0,
-    'imu_temp_f': 0.0, 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+    'imu_temp_f': "ERR", 'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
     # Magnetometer (MMC5603) — calibrated µT
     'mag_x': 0.0, 'mag_y': 0.0, 'mag_z': 0.0, 'mag_ok': False,
     # Madgwick quaternion output

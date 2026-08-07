@@ -265,9 +265,6 @@ def sensor_loop():
 
             # ── Pressure / depth ────────────────────────────────────────────
             pressure_hpa = ps.pressure
-            tc = ps.temperature
-            tf = tc * 9.0 / 5.0 + 32.0
-
             pressure_buf.append(pressure_hpa)
             med_hpa = sorted(pressure_buf)[len(pressure_buf) // 2]
 
@@ -275,6 +272,16 @@ def sensor_loop():
             with cal_lock:
                 dz = calib['depth_zero_ft']
             depth_ft = max(0.0, depth_ft_raw - dz)
+
+            # ── Water temperature (LPS28 onboard temp) ──────────────────────
+            try:
+                tc = ps.temperature
+                if tc is None or not (-20.0 <= tc <= 85.0):   # LPS28 rated operating range
+                    raise ValueError(f"implausible reading: {tc}")
+                tf = tc * 9.0 / 5.0 + 32.0
+            except Exception as e:
+                log(f"[SENSOR] Water temp read invalid: {e}")
+                tf = None
 
             # ── IMU ─────────────────────────────────────────────────────────
             ax, ay, az = imu.read_float_accel_all()   # g
@@ -285,15 +292,13 @@ def sensor_loop():
                 gx -= gyro_offsets['x'];  gy -= gyro_offsets['y'];  gz -= gyro_offsets['z']
 
             temp_raw = imu.read_temp_c()
-            if temp_raw is None:
-                temp_c = 0.0
-            elif -10 <= temp_raw <= 85:
-                temp_c = temp_raw
-            elif -35 <= temp_raw <= 60:
-                temp_c = temp_raw + 25.0
+            if temp_raw is not None and -10 <= temp_raw <= 85:
+                itf = temp_raw * 9.0 / 5.0 + 32.0
+            elif temp_raw is not None and -35 <= temp_raw <= 60:
+                itf = (temp_raw + 25.0) * 9.0 / 5.0 + 32.0
             else:
-                temp_c = 0.0
-            itf = temp_c * 9.0 / 5.0 + 32.0
+                log(f"[SENSOR] Internal temp read invalid: {temp_raw}")
+                itf = None
 
             # ── Magnetometer ─────────────────────────────────────────────────
             mx_cal = my_cal = mz_cal = 0.0
@@ -408,11 +413,11 @@ def sensor_loop():
             # ── Publish to shared dict ───────────────────────────────────
             sensor_data.update({
                 'pressure_inhg': round(med_hpa * 0.02953, 2),
-                'temperature_f': round(tf, 1),
+                'temperature_f': round(tf, 1) if tf is not None else "ERR",
                 'depth_ft': round(depth_ft, 2),
                 'accel_x': round(ax, 3), 'accel_y': round(ay, 3), 'accel_z': round(az, 3),
                 'gyro_x': round(gx, 1),  'gyro_y': round(gy, 1),  'gyro_z': round(gz, 1),
-                'imu_temp_f': round(itf, 1),
+                'imu_temp_f': round(itf, 1) if itf is not None else "ERR",
                 'roll':  round(_disp_roll  - ro, 1),
                 'pitch': round(_disp_pitch - po, 1),
                 'yaw':   round((_disp_yaw  - yo) % 360.0, 1),
