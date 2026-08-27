@@ -689,6 +689,14 @@ button.active {
   text-align: center;
 }
 
+.llm-advisor-text {
+  margin-top: 4px;
+  font-family: "Courier New", Courier, monospace;
+  white-space: pre-wrap;
+  font-size: 11px;
+  color: #e0f7fa;
+}
+
 .pid-tuning {
   margin-top: 8px;
   padding: 6px;

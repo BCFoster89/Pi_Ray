@@ -1,0 +1,17 @@
+# rov_clean runtime dependencies.
+# RPi.GPIO, gpiozero, and picamera2 are typically preinstalled/pinned by
+# Raspberry Pi OS's own package manager rather than pip on real hardware —
+# install those via apt if pip install fails for them.
+flask
+RPi.GPIO
+gpiozero
+pigpio
+adafruit-blinka
+adafruit-circuitpython-lps2x
+sparkfun-qwiic-lsm6dso
+adafruit-circuitpython-mmc56x3
+ahrs
+numpy
+picamera2
+Pillow
+requests

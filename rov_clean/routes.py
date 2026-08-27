@@ -17,12 +17,14 @@ from camera_module import (
 from depth_hold import depth_controller
 from heading_hold import heading_controller
 from position_hold import position_controller
+from llm_advisor import advisor_controller
 import servo
 
 # Wire all hold controllers to respect E-stop state (avoids circular import)
 depth_controller.set_estop_check(pwm_motor.get_estop_state)
 heading_controller.set_estop_check(pwm_motor.get_estop_state)
 position_controller.set_estop_check(pwm_motor.get_estop_state)
+advisor_controller.set_estop_check(pwm_motor.get_estop_state)
 servo.init()
 
 # This function will be called by main.py to attach routes to the Flask app.
@@ -72,6 +74,13 @@ def init_app(app):
                 ctrl.disable()
             except Exception as e:
                 log(f"[MOTOR] {name} hold disable failed during E-stop: {e}")
+
+        # Disable the LLM advisor too — it has no motor authority, but stop
+        # it from showing stale "everything's fine" text mid-emergency.
+        try:
+            advisor_controller.disable()
+        except Exception as e:
+            log(f"[MOTOR] LLM advisor disable failed during E-stop: {e}")
 
         # Also turn off any legacy groups currently reported as "on"
         stopped = []
@@ -541,6 +550,32 @@ def init_app(app):
     @app.route("/position_hold/status")
     def position_hold_status():
         return jsonify(position_controller.get_status())
+
+    # ==========================================================================
+    # LLM ADVISOR (advisory only — never wired into motor_pwm)
+    # ==========================================================================
+
+    @app.route("/llm_advisor/enable", methods=["POST"])
+    def llm_advisor_enable():
+        try:
+            advisor_controller.enable()
+            return jsonify({"success": True, "status": advisor_controller.get_status()})
+        except Exception as e:
+            log(f"[LLM] Enable error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/llm_advisor/disable", methods=["POST"])
+    def llm_advisor_disable():
+        try:
+            advisor_controller.disable()
+            return jsonify({"success": True})
+        except Exception as e:
+            log(f"[LLM] Disable error: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @app.route("/llm_advisor/status")
+    def llm_advisor_status():
+        return jsonify(advisor_controller.get_status())
 
     # ==========================================================================
     # MAGNETOMETER CALIBRATION

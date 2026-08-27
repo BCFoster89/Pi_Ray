@@ -163,6 +163,15 @@
     </div>
 
     <div class="card hud-card">
+      <div class="hold-header">
+        <span class="hold-title">LLM Advisor</span>
+        <button id="llmAdvisorBtn" class="hold-toggle-btn" onclick="toggleLLMAdvisor()">OFF</button>
+      </div>
+      <div id="llmAdvisorStatus" class="depth-hold-status"></div>
+      <pre id="llmAdvisorText" class="llm-advisor-text"></pre>
+    </div>
+
+    <div class="card hud-card">
       <div class="button-grid cal-grid">
         <button onclick="calibrateDepth()">Zero Depth</button>
         <button onclick="calibrateHorizon()">Zero Horiz</button>

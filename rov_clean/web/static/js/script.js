@@ -368,6 +368,65 @@ async function pollDepthHoldStatus() {
 }
 setInterval(pollDepthHoldStatus, 500);
 
+// === LLM ADVISOR FUNCTIONS ===
+let llmAdvisorEnabled = false;
+
+async function toggleLLMAdvisor() {
+  const btn = document.getElementById('llmAdvisorBtn');
+  const statusEl = document.getElementById('llmAdvisorStatus');
+
+  try {
+    if (!llmAdvisorEnabled) {
+      let r = await fetch('/llm_advisor/enable', { method: 'POST' });
+      let data = await r.json();
+      if (data.success) {
+        llmAdvisorEnabled = true;
+        btn.classList.add('active');
+        btn.textContent = 'ON';
+      } else {
+        statusEl.textContent = data.error || 'Failed';
+      }
+    } else {
+      await fetch('/llm_advisor/disable', { method: 'POST' });
+      llmAdvisorEnabled = false;
+      btn.classList.remove('active');
+      btn.textContent = 'OFF';
+      statusEl.textContent = '';
+    }
+  } catch (e) {
+    console.error("LLM advisor error:", e);
+    statusEl.textContent = 'Error';
+  }
+}
+
+// Poll LLM advisor status
+async function pollLLMAdvisorStatus() {
+  try {
+    let r = await fetch('/llm_advisor/status', { cache: "no-store" });
+    let data = await r.json();
+
+    const btn = document.getElementById('llmAdvisorBtn');
+    const statusEl = document.getElementById('llmAdvisorStatus');
+    const textEl = document.getElementById('llmAdvisorText');
+
+    llmAdvisorEnabled = data.enabled;
+
+    if (data.enabled) {
+      btn.classList.add('active');
+      btn.textContent = 'ON';
+      const rung = data.last_rung_name || (data.last_rung !== null ? `rung ${data.last_rung}` : '—');
+      statusEl.textContent = data.last_error ? `Error: ${data.last_error}` : `Served by: ${rung}`;
+    } else {
+      btn.classList.remove('active');
+      btn.textContent = 'OFF';
+    }
+    textEl.textContent = data.last_response_text || '';
+  } catch (e) {
+    // Silently fail - server might not support the LLM advisor yet
+  }
+}
+setInterval(pollLLMAdvisorStatus, 2000);
+
 // === HEADING HOLD FUNCTIONS ===
 async function toggleHeadingHold() {
   const btn = document.getElementById('headingHoldBtn');
