@@ -12,6 +12,7 @@ gives no response-time guarantee (a cold local model can take up to two
 minutes), so nothing here may sit in the motor command path.
 """
 
+import os
 import time
 import threading
 import requests
@@ -23,6 +24,16 @@ ROUTER_URL = "http://localhost:8000/v1/chat/completions"
 # Sustained/large magnetometer deviation (µT) that promotes a tick from a
 # routine local query to a high-priority cloud-escalation query.
 MAG_ANOMALY_ESCALATE_UT = 15.0
+
+# Only needed if Routron's config has auth.enabled: true. Set the same value
+# Routron was started with: export COMPUTEROUTER_AUTH_TOKEN=... before
+# running main.py. Matches the convention already used in Routron's own
+# test_client.py.
+AUTH_TOKEN = os.environ.get("COMPUTEROUTER_AUTH_TOKEN")
+
+
+def _auth_headers():
+    return {"Authorization": f"Bearer {AUTH_TOKEN}"} if AUTH_TOKEN else {}
 
 
 class LLMAdvisorController:
@@ -134,7 +145,7 @@ class LLMAdvisorController:
         }
 
         try:
-            r = requests.post(self.router_url, json=payload, timeout=timeout)
+            r = requests.post(self.router_url, json=payload, headers=_auth_headers(), timeout=timeout)
             if r.status_code == 200:
                 data = r.json()
                 text = data["choices"][0]["message"]["content"]
