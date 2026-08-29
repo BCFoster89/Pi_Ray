@@ -1,10 +1,11 @@
 # llm_advisor.py
 """
 Advisory-only bridge from ROV telemetry to a Routron (ComputeRouter) LLM
-proxy. Polls a redacted slice of sensor_data on a slow interval, asks a
-routine low-priority question most ticks and escalates to a high-priority
-question when a locally-cheap check (magnetometer anomaly) fires, and
-stores the result for the HUD/logs to display.
+proxy. Fires exactly one query per operator button press (no background
+polling timer), asking a routine low-priority question normally and
+escalating to a high-priority question when a locally-cheap check
+(magnetometer anomaly) fires, then stores the result for the HUD/logs to
+display and appends a human-readable record to a text log file.
 
 This controller has NO get_output() and is never read by motor_pwm() in
 routes.py — it cannot influence motor commands, by construction. Routron
@@ -16,13 +17,14 @@ import os
 import time
 import threading
 import requests
+from datetime import datetime
 from logger import log
 from config import sensor_data
 
 ROUTER_URL = "http://localhost:8000/v1/chat/completions"
 
-# Sustained/large magnetometer deviation (µT) that promotes a tick from a
-# routine local query to a high-priority cloud-escalation query.
+# Sustained/large magnetometer deviation (µT) that promotes a query from a
+# routine local question to a high-priority cloud-escalation question.
 MAG_ANOMALY_ESCALATE_UT = 15.0
 
 # Only needed if Routron's config has auth.enabled: true. Set the same value
@@ -36,18 +38,42 @@ def _auth_headers():
     return {"Authorization": f"Bearer {AUTH_TOKEN}"} if AUTH_TOKEN else {}
 
 
-class LLMAdvisorController:
-    """Polls sensor_data, queries Routron, stores the result. Advisory only."""
+LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dive_logs')
+os.makedirs(LOGS_DIR, exist_ok=True)
 
-    def __init__(self, router_url=ROUTER_URL, poll_interval_s=10.0):
+
+def _query_log_path():
+    """Return path for today's plain-text query log (rotated by date, like
+    telemetry_logger.py's CSV, but human-readable instead of a DB row)."""
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    return os.path.join(LOGS_DIR, f"llm_advisor_{date_str}.log")
+
+
+def _append_query_log(question, telemetry_line, priority, complexity, rung_name, response_text, error):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if error:
+        line = f"[{ts}] priority={priority} complexity={complexity} ERROR={error} | asked: {question} | telemetry: {telemetry_line}\n"
+    else:
+        line = (
+            f"[{ts}] priority={priority} complexity={complexity} rung={rung_name} "
+            f"| asked: {question} | telemetry: {telemetry_line} | response: {response_text}\n"
+        )
+    try:
+        with open(_query_log_path(), 'a') as f:
+            f.write(line)
+    except Exception as e:
+        log(f"[LLM] Query log write failed: {e}")
+
+
+class LLMAdvisorController:
+    """Fires one advisory query per request_query() call. Advisory only."""
+
+    def __init__(self, router_url=ROUTER_URL):
         self.router_url = router_url
-        self.poll_interval_s = poll_interval_s
 
         self._lock = threading.Lock()
-        self._running = False
-        self._thread = None
+        self.busy = False
 
-        self.enabled = False
         self.last_query_time = 0.0
         self.last_rung = None
         self.last_rung_name = None
@@ -62,32 +88,31 @@ class LLMAdvisorController:
         """Register a function that returns True if E-stop is engaged."""
         self._estop_check_fn = fn
 
-    def enable(self):
+    def request_query(self):
+        """
+        Trigger one advisory query in a background thread so the HTTP
+        request that calls this returns immediately (a cold local model can
+        take up to two minutes). Returns (started: bool, reason: str|None).
+        """
         with self._lock:
-            if self.enabled:
-                return
-            self.enabled = True
-            self._running = True
-            self._thread = threading.Thread(target=self._advisor_loop, daemon=True)
-            self._thread.start()
-            log("[LLM] Advisor ENABLED")
+            if self.busy:
+                return False, "already querying"
+            if self._estop_check_fn and self._estop_check_fn():
+                return False, "E-stop engaged"
+            self.busy = True
 
-    def disable(self):
-        with self._lock:
-            if not self.enabled:
-                return
-            self.enabled = False
-            self._running = False
-            log("[LLM] Advisor DISABLED")
+        thread = threading.Thread(target=self._run_query_and_clear_busy, daemon=True)
+        thread.start()
+        return True, None
 
-    def _advisor_loop(self):
-        while self._running:
-            try:
-                if not (self._estop_check_fn and self._estop_check_fn()):
-                    self._run_query()
-            except Exception as e:
-                log(f"[LLM] Advisor loop error: {e}")
-            time.sleep(self.poll_interval_s)
+    def _run_query_and_clear_busy(self):
+        try:
+            self._run_query()
+        except Exception as e:
+            log(f"[LLM] Advisor query error: {e}")
+        finally:
+            with self._lock:
+                self.busy = False
 
     def _build_query(self):
         """
@@ -149,35 +174,40 @@ class LLMAdvisorController:
             if r.status_code == 200:
                 data = r.json()
                 text = data["choices"][0]["message"]["content"]
+                rung_name = r.headers.get("X-Compute-Rung-Name")
                 with self._lock:
                     self.last_query_time = time.time()
                     self.last_rung = r.headers.get("X-Compute-Rung")
-                    self.last_rung_name = r.headers.get("X-Compute-Rung-Name")
+                    self.last_rung_name = rung_name
                     self.last_response_text = text
                     self.last_error = None
+                _append_query_log(question, line, priority, complexity, rung_name, text, None)
             else:
+                error = f"HTTP {r.status_code}"
                 with self._lock:
-                    self.last_error = f"HTTP {r.status_code}"
+                    self.last_error = error
                 log(f"[LLM] Advisor request failed: HTTP {r.status_code}")
+                _append_query_log(question, line, priority, complexity, None, None, error)
         except requests.exceptions.Timeout:
             with self._lock:
                 self.last_error = "timeout"
             log("[LLM] Advisor request timed out")
+            _append_query_log(question, line, priority, complexity, None, None, "timeout")
         except requests.exceptions.ConnectionError:
             with self._lock:
                 self.last_error = "connection error"
             log("[LLM] Advisor connection error - is Routron running?")
+            _append_query_log(question, line, priority, complexity, None, None, "connection error")
         except Exception as e:
             with self._lock:
                 self.last_error = str(e)
             log(f"[LLM] Advisor request error: {e}")
+            _append_query_log(question, line, priority, complexity, None, None, str(e))
 
     def get_status(self):
         with self._lock:
-            estop_active = bool(self._estop_check_fn and self._estop_check_fn())
             return {
-                "enabled": self.enabled,
-                "advisory_active": self.enabled and not estop_active,
+                "busy": self.busy,
                 "last_query_time": self.last_query_time,
                 "last_rung": self.last_rung,
                 "last_rung_name": self.last_rung_name,

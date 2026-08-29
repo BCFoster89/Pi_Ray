@@ -369,29 +369,20 @@ async function pollDepthHoldStatus() {
 setInterval(pollDepthHoldStatus, 500);
 
 // === LLM ADVISOR FUNCTIONS ===
-let llmAdvisorEnabled = false;
-
-async function toggleLLMAdvisor() {
+async function sendLLMQuery() {
   const btn = document.getElementById('llmAdvisorBtn');
   const statusEl = document.getElementById('llmAdvisorStatus');
 
   try {
-    if (!llmAdvisorEnabled) {
-      let r = await fetch('/llm_advisor/enable', { method: 'POST' });
-      let data = await r.json();
-      if (data.success) {
-        llmAdvisorEnabled = true;
-        btn.classList.add('active');
-        btn.textContent = 'ON';
-      } else {
-        statusEl.textContent = data.error || 'Failed';
-      }
-    } else {
-      await fetch('/llm_advisor/disable', { method: 'POST' });
-      llmAdvisorEnabled = false;
-      btn.classList.remove('active');
-      btn.textContent = 'OFF';
+    let r = await fetch('/llm_advisor/query', { method: 'POST' });
+    let data = await r.json();
+    if (data.success) {
+      btn.disabled = true;
+      btn.classList.add('active');
+      btn.textContent = 'Querying...';
       statusEl.textContent = '';
+    } else {
+      statusEl.textContent = data.error || 'Failed';
     }
   } catch (e) {
     console.error("LLM advisor error:", e);
@@ -399,7 +390,8 @@ async function toggleLLMAdvisor() {
   }
 }
 
-// Poll LLM advisor status
+// Poll LLM advisor status — reflects whether a query is in flight and shows
+// the last result, but never triggers a query itself (that's button-only).
 async function pollLLMAdvisorStatus() {
   try {
     let r = await fetch('/llm_advisor/status', { cache: "no-store" });
@@ -409,16 +401,16 @@ async function pollLLMAdvisorStatus() {
     const statusEl = document.getElementById('llmAdvisorStatus');
     const textEl = document.getElementById('llmAdvisorText');
 
-    llmAdvisorEnabled = data.enabled;
-
-    if (data.enabled) {
+    if (data.busy) {
+      btn.disabled = true;
       btn.classList.add('active');
-      btn.textContent = 'ON';
-      const rung = data.last_rung_name || (data.last_rung !== null ? `rung ${data.last_rung}` : '—');
-      statusEl.textContent = data.last_error ? `Error: ${data.last_error}` : `Served by: ${rung}`;
+      btn.textContent = 'Querying...';
     } else {
+      btn.disabled = false;
       btn.classList.remove('active');
-      btn.textContent = 'OFF';
+      btn.textContent = 'Send Query';
+      const rung = data.last_rung_name || (data.last_rung !== null ? `rung ${data.last_rung}` : '—');
+      statusEl.textContent = data.last_error ? `Error: ${data.last_error}` : (data.last_query_time ? `Served by: ${rung}` : '');
     }
     textEl.textContent = data.last_response_text || '';
   } catch (e) {

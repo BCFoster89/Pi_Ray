@@ -75,12 +75,10 @@ def init_app(app):
             except Exception as e:
                 log(f"[MOTOR] {name} hold disable failed during E-stop: {e}")
 
-        # Disable the LLM advisor too — it has no motor authority, but stop
-        # it from showing stale "everything's fine" text mid-emergency.
-        try:
-            advisor_controller.disable()
-        except Exception as e:
-            log(f"[MOTOR] LLM advisor disable failed during E-stop: {e}")
+        # Note: the LLM advisor fires one query per button press, not on a
+        # timer, so there's nothing persistent to disable here. Its own
+        # set_estop_check() wiring above already refuses to start a new
+        # query while E-stop is engaged.
 
         # Also turn off any legacy groups currently reported as "on"
         stopped = []
@@ -555,22 +553,18 @@ def init_app(app):
     # LLM ADVISOR (advisory only — never wired into motor_pwm)
     # ==========================================================================
 
-    @app.route("/llm_advisor/enable", methods=["POST"])
-    def llm_advisor_enable():
+    @app.route("/llm_advisor/query", methods=["POST"])
+    def llm_advisor_query():
+        """Fire one advisory query on demand. Returns immediately — the
+        query runs in a background thread since a cold local model can take
+        up to two minutes; poll /llm_advisor/status for the result."""
         try:
-            advisor_controller.enable()
-            return jsonify({"success": True, "status": advisor_controller.get_status()})
+            started, reason = advisor_controller.request_query()
+            if started:
+                return jsonify({"success": True})
+            return jsonify({"success": False, "error": reason}), 409
         except Exception as e:
-            log(f"[LLM] Enable error: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
-
-    @app.route("/llm_advisor/disable", methods=["POST"])
-    def llm_advisor_disable():
-        try:
-            advisor_controller.disable()
-            return jsonify({"success": True})
-        except Exception as e:
-            log(f"[LLM] Disable error: {e}")
+            log(f"[LLM] Query trigger error: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
 
     @app.route("/llm_advisor/status")
