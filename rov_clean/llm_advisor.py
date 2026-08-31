@@ -27,6 +27,14 @@ ROUTER_URL = "http://localhost:8000/v1/chat/completions"
 # routine local question to a high-priority cloud-escalation question.
 MAG_ANOMALY_ESCALATE_UT = 15.0
 
+# How long to wait for a response before giving up on this end. Both
+# priority ladders in config.pi_ray.yaml can land on the local rung
+# (low_priority_ladder: [0,1], high_priority_ladder: [1,0]), and that rung's
+# own request_timeout_seconds is 120s to tolerate a cold/slow local model —
+# this must stay comfortably above that, or we cut the request off before
+# Routron's own timeout/fallback logic even gets a chance to run.
+QUERY_TIMEOUT_S = 130
+
 # Only needed if Routron's config has auth.enabled: true. Set the same value
 # Routron was started with: export COMPUTEROUTER_AUTH_TOKEN=... before
 # running main.py. Matches the convention already used in Routron's own
@@ -159,7 +167,6 @@ class LLMAdvisorController:
 
     def _run_query(self):
         line, question, priority, complexity = self._build_query()
-        timeout = 5 if priority == "low" else 30
         payload = {
             "messages": [
                 {"role": "user", "content": f"{question} Telemetry: {line}"}
@@ -170,7 +177,7 @@ class LLMAdvisorController:
         }
 
         try:
-            r = requests.post(self.router_url, json=payload, headers=_auth_headers(), timeout=timeout)
+            r = requests.post(self.router_url, json=payload, headers=_auth_headers(), timeout=QUERY_TIMEOUT_S)
             if r.status_code == 200:
                 data = r.json()
                 text = data["choices"][0]["message"]["content"]
