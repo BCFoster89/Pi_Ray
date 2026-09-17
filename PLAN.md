@@ -1,5 +1,10 @@
 # Feature Implementation Plan
 
+> **Autonomy and Routron LLM integration are tracked separately** — see
+> `ROUTRON_INTEGRATION.md` at the top of this repo for the mission-sequencer
+> and LLM co-pilot plan, built on top of the depth/heading/position hold
+> controllers this file describes below.
+
 ## Overview
 
 Three new features for the ROV control system:
